@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { createClient } from "@/lib/supabase/server";
 import { getLLMClient, DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, isKnownModel } from "@/lib/ai/client";
+import { withRetry } from "@/lib/ai/retry";
 import { availableToolNames, toOpenAITools } from "@/lib/tools/registry";
 import { executeTool } from "@/lib/tools/executor";
 import { deriveTitle } from "@/lib/utils";
@@ -106,8 +107,9 @@ export async function POST(request: NextRequest) {
 
   // --- Mode-specific preparation ------------------------------------------
   if (mode === "regenerate") {
-    // Reuse the last user turn verbatim, and drop the reply we are replacing
-    // so regenerating replaces rather than appends.
+    // Reuse the last user turn verbatim. The previous answer is deliberately
+    // KEPT: it stays in the thread as an earlier variant of this same turn,
+    // which is exactly what the variant switcher in the UI reads.
     const { data: lastUser } = await supabase
       .from("messages")
       .select("id, content, attachments, created_at")
@@ -127,13 +129,12 @@ export async function POST(request: NextRequest) {
       attachments = lastUser.attachments as Attachment[];
     }
 
-    await supabase
-      .from("messages")
-      .delete()
-      .eq("conversation_id", convId)
-      .eq("user_id", user.id)
-      .in("role", ["assistant", "tool"])
-      .gt("created_at", lastUser.created_at as string);
+    // Nothing is deleted here. Deleting the previous reply is what previously
+    // made the variant switcher dead code: the client-side grouping in
+    // src/lib/variants.ts can only offer a choice when more than one assistant
+    // message answers the same turn. An interrupted turn's empty placeholder is
+    // already removed by the catch block below, and the client filters any that
+    // survive, so no cleanup is needed to keep blank bubbles out of the thread.
   }
 
   if (mode === "edit") {
@@ -266,19 +267,36 @@ export async function POST(request: NextRequest) {
         const working: ChatCompletionMessageParam[] = [...llmMessages];
 
         for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-          const completion = await client.chat.completions.create(
-            {
-              model,
-              messages: working,
-              stream: true,
-              ...(openaiTools.length > 0
-                ? { tools: openaiTools, tool_choice: "auto" as const }
-                : {}),
-            },
-            { signal: request.signal },
-          );
-
           let iterationText = "";
+
+          // Establishing the stream is the part worth retrying: a 429 while a
+          // rate limit resets, or a 502/503 from a load balancer, is transient.
+          // Once this iteration has emitted any text a retry would replay it,
+          // so `hasProducedOutput` stops that and the error surfaces instead.
+          const completion = await withRetry(
+            () =>
+              client.chat.completions.create(
+                {
+                  model,
+                  messages: working,
+                  stream: true,
+                  ...(openaiTools.length > 0
+                    ? { tools: openaiTools, tool_choice: "auto" as const }
+                    : {}),
+                },
+                { signal: request.signal },
+              ),
+            {
+              maxAttempts: 3,
+              hasProducedOutput: () => iterationText.length > 0,
+              onRetry: ({ attempt, delayMs, error }) => {
+                console.warn(
+                  `[chat] model call failed (attempt ${attempt}), retrying in ${delayMs}ms:`,
+                  error instanceof Error ? error.message : error,
+                );
+              },
+            },
+          );
           const pendingCalls = new Map<
             number,
             { id: string; name: string; args: string }

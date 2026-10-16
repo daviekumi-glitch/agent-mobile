@@ -93,3 +93,18 @@ export function visibleMessages(
     return true;
   });
 }
+
+/**
+ * Index of the newest assistant message in an already-collapsed thread.
+ *
+ * This must be computed against the *rendered* list, never the raw one:
+ * collapsing a variant group removes rows, so an index taken from the full
+ * array points at the wrong bubble and would attach "regenerate" to an older
+ * answer. Returns -1 when the thread has no assistant message yet.
+ */
+export function lastAssistantIndex(rendered: Message[]): number {
+  for (let i = rendered.length - 1; i >= 0; i--) {
+    if (rendered[i].role === "assistant") return i;
+  }
+  return -1;
+}

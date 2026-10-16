@@ -44,7 +44,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+          cache: npm
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -56,64 +56,25 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          else
-            echo "::warning::package-lock.json is not in the repository - falling back to 'npm install'."
-            npm install --no-audit --no-fund
-          fi
+        run: npm ci --no-audit --no-fund
 
-      # The Gradle wrapper JAR and the generated res/ bitmaps are binaries and
-      # are not tracked in git (see README -> Android -> Reproducing). Rather
-      # than let `./gradlew` die with a confusing "Could not find or load main
-      # class GradleWrapperMain", fetch what can be fetched and report exactly
-      # what is still missing.
-      - name: Ensure the Android project is complete
+      # The Gradle wrapper JAR and the generated res/ bitmaps are committed, so
+      # this is a presence check rather than a repair step. It fails with a named
+      # error instead of letting `./gradlew` die with a confusing
+      # "Could not find or load main class GradleWrapperMain".
+      - name: Verify the Android project is complete
         run: |
           missing=0
-
           for f in android/settings.gradle android/build.gradle \
-                   android/app/build.gradle android/app/src/main/AndroidManifest.xml; do
+                   android/app/build.gradle android/app/src/main/AndroidManifest.xml \
+                   android/gradlew android/gradle/wrapper/gradle-wrapper.jar \
+                   android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png; do
             if [ ! -f "$f" ]; then
               echo "::error::Required file $f is missing from the repository."
               missing=1
             fi
           done
-
-          if [ ! -f android/gradlew ]; then
-            echo "::error::android/gradlew is missing from the repository."
-            missing=1
-          else
-            chmod +x android/gradlew
-          fi
-
-          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "gradle-wrapper.jar absent; fetching it from the Gradle distribution."
-            mkdir -p android/gradle/wrapper
-            curl -fsSL -o android/gradle/wrapper/gradle-wrapper.jar \
-              https://raw.githubusercontent.com/gradle/gradle/v8.2.1/gradle/wrapper/gradle-wrapper.jar
-          fi
-
-          # The launcher icon and splash bitmaps are generated artwork. Without
-          # them aapt fails on `@mipmap/ic_launcher`. They are reproducible from
-          # assets/ -- but only if assets/icon.png and assets/splash.png are
-          # themselves present.
-          if [ ! -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]; then
-            if [ -f assets/icon.png ] && [ -f assets/splash.png ]; then
-              echo "Generated res/ bitmaps absent; regenerating from assets/."
-              python3 -m pip install --quiet Pillow
-              python3 scripts/generate-android-assets.py \
-                --icon assets/icon.png --splash assets/splash.png
-            else
-              echo "::error::The generated Android bitmaps are not in the repository and"
-              echo "::error::assets/icon.png + assets/splash.png are missing, so they cannot"
-              echo "::error::be regenerated. Commit the binary assets listed in"
-              echo "::error::README -> Android -> Reproducing, then re-run this workflow."
-              missing=1
-            fi
-          fi
-
+          chmod +x android/gradlew
           [ "$missing" -eq 0 ] || exit 1
 
       - name: Resolve app URL

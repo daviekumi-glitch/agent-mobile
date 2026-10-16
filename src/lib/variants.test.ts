@@ -3,6 +3,7 @@ import {
   HEAD_GROUP,
   groupAssistantVariants,
   hasVariants,
+  lastAssistantIndex,
   pickVariant,
   visibleMessages,
 } from "@/lib/variants";
@@ -129,5 +130,37 @@ describe("visibleMessages", () => {
   it("does not drop non-assistant messages", () => {
     const visible = visibleMessages([user1, msg("tool"), a1, a2], {});
     expect(visible.filter((m) => m.role === "tool")).toHaveLength(1);
+  });
+});
+
+describe("lastAssistantIndex", () => {
+  it("finds the newest assistant message", () => {
+    expect(lastAssistantIndex([user1, a1, user2, a2])).toBe(3);
+  });
+
+  it("returns -1 when there is no assistant message", () => {
+    expect(lastAssistantIndex([user1, user2])).toBe(-1);
+    expect(lastAssistantIndex([])).toBe(-1);
+  });
+
+  it("ignores trailing non-assistant messages", () => {
+    expect(lastAssistantIndex([user1, a1, msg("tool")])).toBe(1);
+  });
+
+  // The regression this guards: with variants present, the raw thread is longer
+  // than the rendered one, so an index taken from the raw array points past the
+  // end of the rendered list and "regenerate" lands on the wrong bubble.
+  it("differs from the raw index once a variant group is collapsed", () => {
+    const raw = [user1, a1, a2, a3];
+    const rendered = visibleMessages(raw, {});
+
+    expect(lastAssistantIndex(raw)).toBe(3);
+    expect(lastAssistantIndex(rendered)).toBe(1);
+    expect(rendered[lastAssistantIndex(rendered)].id).toBe("a3");
+  });
+
+  it("still points at the selected variant when an older one is chosen", () => {
+    const rendered = visibleMessages([user1, a1, a2], { u1: 0 });
+    expect(rendered[lastAssistantIndex(rendered)].id).toBe("a1");
   });
 });

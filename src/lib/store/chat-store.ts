@@ -253,14 +253,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // duplicated user message or a stale reply while the server catches up.
     let baseMessages: Message[];
     if (mode === "regenerate") {
-      let lastUserId = -1;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === "user") {
-          lastUserId = i;
-          break;
-        }
-      }
-      baseMessages = lastUserId === -1 ? messages : messages.slice(0, lastUserId + 1);
+      // Keep the whole thread, including the answer being replaced: it becomes
+      // an earlier variant, so the switcher reads "2/2" as soon as the new
+      // answer starts streaming rather than only after a reload.
+      baseMessages = messages;
     } else if (mode === "edit") {
       const targetId = options.targetMessageId;
       const idx = messages.findIndex((m) => m.id === targetId);
@@ -272,7 +268,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     set(() => ({
-      messages: [...baseMessages, optimisticUser, optimisticAssistant],
+      // Regenerate replays an existing user turn, so that user bubble is already
+      // in `baseMessages` - appending it again would duplicate it.
+      messages: [
+        ...baseMessages,
+        ...(mode === "regenerate" ? [] : [optimisticUser]),
+        optimisticAssistant,
+      ],
       isStreaming: true,
       error: null,
       abortController: controller,

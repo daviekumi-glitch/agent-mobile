@@ -6,7 +6,7 @@ import { MessageBubble } from "@/components/chat/message-bubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { groupAssistantVariants, visibleMessages } from "@/lib/variants";
+import { groupAssistantVariants, lastAssistantIndex as lastAssistantIndexIn, visibleMessages } from "@/lib/variants";
 import type { Message } from "@/lib/types";
 
 export function MessageThread({
@@ -59,13 +59,6 @@ export function MessageThread({
     setPinned(true);
   };
 
-  const lastAssistantIndex = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") return i;
-    }
-    return -1;
-  }, [messages]);
-
   // --- Variant collapsing --------------------------------------------------
   // Several answers to one prompt are stored as consecutive assistant messages.
   // Only the selected one is rendered; the switcher on the bubble changes the
@@ -75,6 +68,11 @@ export function MessageThread({
     () => visibleMessages(messages, selectedVariants ?? {}),
     [messages, selectedVariants],
   );
+
+  // Indexed against `rendered`, not `messages`: collapsing a variant group
+  // removes rows, so an index taken from the full array would point at the
+  // wrong bubble and attach "regenerate" to an older answer.
+  const lastAssistantIndex = React.useMemo(() => lastAssistantIndexIn(rendered), [rendered]);
 
   const variantInfo = React.useCallback(
     (messageId: string) => {
