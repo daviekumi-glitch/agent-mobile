@@ -11,7 +11,9 @@ export type ToolName =
   | "run_code"
   | "generate_image"
   | "read_file"
-  | "get_current_time";
+  | "get_current_time"
+  | "calculator"
+  | "get_weather";
 
 export interface ToolDefinition {
   name: ToolName;
@@ -29,7 +31,7 @@ export interface ToolDefinition {
   requiresEnv?: string;
 }
 
-export type SkillId = "research" | "code" | "media" | "files" | "utility";
+export type SkillId = "research" | "code" | "media" | "files" | "utility" | "math";
 
 export interface SkillDefinition {
   id: SkillId;
@@ -45,7 +47,14 @@ export const SKILLS: SkillDefinition[] = [
     label: "Web Research",
     description: "Search the live web and read pages for up-to-date answers.",
     icon: "Globe",
-    tools: ["web_search"],
+    tools: ["web_search", "get_weather"],
+  },
+  {
+    id: "math",
+    label: "Math & Data",
+    description: "Evaluate arithmetic precisely instead of estimating it.",
+    icon: "Calculator",
+    tools: ["calculator"],
   },
   {
     id: "code",
@@ -97,6 +106,55 @@ export const TOOLS: ToolDefinition[] = [
         },
       },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_weather",
+    label: "Weather",
+    description: "Look up current weather conditions for a city.",
+    icon: "CloudSun",
+    skill: "research",
+    requiresEnv: "OPENWEATHER_API_KEY",
+    parameters: {
+      type: "object",
+      properties: {
+        location: {
+          type: "string",
+          description: "City name, optionally with a country code, e.g. 'Blantyre,MW'.",
+        },
+        units: {
+          type: "string",
+          enum: ["metric", "imperial"],
+          description: "metric = °C (default), imperial = °F.",
+        },
+      },
+      required: ["location"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "calculator",
+    label: "Calculator",
+    description:
+      "Evaluate an arithmetic expression exactly (+ - * / % ^, parentheses, sqrt, log, min, max, pi, e).",
+    icon: "Calculator",
+    skill: "math",
+    parameters: {
+      type: "object",
+      properties: {
+        expression: {
+          type: "string",
+          description: "Arithmetic expression, e.g. '(1250 * 1.18) / 3' or 'sqrt(2) * pi'.",
+        },
+        precision: {
+          type: "integer",
+          description: "Decimal places to round to (0-12). Defaults to 6.",
+          minimum: 0,
+          maximum: 12,
+        },
+      },
+      required: ["expression"],
       additionalProperties: false,
     },
   },
@@ -182,14 +240,17 @@ export const TOOL_MAP: Record<string, ToolDefinition> = Object.fromEntries(
   TOOLS.map((t) => [t.name, t]),
 );
 
+/** True when the tool's required env var is present in this deployment. */
+export function isToolAvailable(tool: ToolDefinition): boolean {
+  if (!tool.requiresEnv) return true;
+  const value = process.env[tool.requiresEnv];
+  if (tool.requiresEnv === "ENABLE_CODE_EXECUTION") return value === "1";
+  return Boolean(value);
+}
+
 /** Tools whose required env var is present in this deployment. */
 export function availableToolNames(): ToolName[] {
-  return TOOLS.filter((t) => {
-    if (!t.requiresEnv) return true;
-    const value = process.env[t.requiresEnv];
-    if (t.requiresEnv === "ENABLE_CODE_EXECUTION") return value === "1";
-    return Boolean(value);
-  }).map((t) => t.name);
+  return TOOLS.filter(isToolAvailable).map((t) => t.name);
 }
 
 /** OpenAI-style function definitions for the enabled subset. */

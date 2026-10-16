@@ -80,6 +80,18 @@ export type ChatStreamEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
+/**
+ * How the turn relates to the existing thread:
+ *
+ * - `send`       — a brand-new user message (the default).
+ * - `regenerate` — re-run the model for the last user turn. The previous
+ *                  assistant reply is replaced rather than appended to, so
+ *                  regenerating never duplicates the user's message.
+ * - `edit`       — replace the content of an existing user message, drop
+ *                  everything after it, and re-run the model.
+ */
+export type ChatMode = "send" | "regenerate" | "edit";
+
 export interface ChatRequestBody {
   conversationId?: string;
   message: string;
@@ -87,4 +99,12 @@ export interface ChatRequestBody {
   attachments?: Attachment[];
   enabledTools?: string[];
   systemPrompt?: string;
+  /** Defaults to `send` when omitted. */
+  mode?: ChatMode;
+  /** Required when `mode` is `edit` — the user message being rewritten. */
+  targetMessageId?: string;
 }
+
+// --- Export -----------------------------------------------------------------
+
+export type ExportFormat = "markdown" | "json";

@@ -1,0 +1,61 @@
+name: CI
+
+# Runs on every pull request (the primary gate) and on pushes to main so a
+# direct push cannot bypass verification.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A newer commit on the same ref cancels the in-flight run — no point verifying
+# code that has already been superseded.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Build-time placeholders. Next.js inlines NEXT_PUBLIC_* at build time and
+    # the Supabase clients read them at module load, so the build needs *values*
+    # — but they are never used to reach a real backend during a build.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
+      OPENAI_API_KEY: sk-placeholder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `npm install` rather than `npm ci`: the existing repository did not
+      # track package-lock.json, so a strict `ci` install would fail on a cold
+      # checkout. Switch to `npm ci` (and add `cache: npm` above) once the
+      # lockfile is committed and authoritative.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+        # Lint is advisory: it should surface in the PR summary without blocking
+        # a merge on a stylistic finding. Promote it once the baseline is clean.
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
