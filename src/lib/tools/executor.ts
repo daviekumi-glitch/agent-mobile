@@ -1,4 +1,6 @@
 import type { Attachment } from "@/lib/types";
+import { evaluate } from "@/lib/tools/calculator";
+import { mapWeatherResponse, weatherUrl, type OpenWeatherResponse } from "@/lib/tools/weather";
 
 // ---------------------------------------------------------------------------
 // Server-side tool executors.
@@ -88,7 +90,6 @@ async function webSearch(
 // --- run_code ---------------------------------------------------------------
 async function runCode(
   args: { code?: string },
-  _ctx: ToolContext,
 ): Promise<ToolOutcome> {
   if (process.env.ENABLE_CODE_EXECUTION !== "1") {
     return {
@@ -268,6 +269,59 @@ async function getCurrentTime(args: { timezone?: string }): Promise<ToolOutcome>
   }
 }
 
+// --- calculator -------------------------------------------------------------
+async function calculator(args: {
+  expression?: string;
+  precision?: number;
+}): Promise<ToolOutcome> {
+  const expression = String(args.expression ?? "").trim();
+  if (!expression) return { ok: false, data: null, error: "`expression` is required." };
+  try {
+    return { ok: true, data: evaluate(expression, args.precision) };
+  } catch (err) {
+    return {
+      ok: false,
+      data: null,
+      error: err instanceof Error ? err.message : "Could not evaluate the expression.",
+    };
+  }
+}
+
+// --- get_weather ------------------------------------------------------------
+async function getWeather(
+  args: { location?: string; units?: string },
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  if (!apiKey) {
+    return {
+      ok: false,
+      data: null,
+      error: "Weather lookups are not configured on this deployment (OPENWEATHER_API_KEY missing).",
+    };
+  }
+
+  const location = String(args.location ?? "").trim();
+  if (!location) return { ok: false, data: null, error: "`location` is required." };
+  const units = args.units === "imperial" ? "imperial" : "metric";
+
+  const res = await fetch(weatherUrl(apiKey, location, units), { signal: ctx.signal });
+  if (!res.ok) {
+    return {
+      ok: false,
+      data: null,
+      error: `Weather provider returned HTTP ${res.status} for "${location}".`,
+    };
+  }
+
+  const json = (await res.json()) as OpenWeatherResponse;
+  const mapped = mapWeatherResponse(json, location, units);
+  if (!mapped) {
+    return { ok: false, data: null, error: `No weather data found for "${location}".` };
+  }
+  return { ok: true, data: mapped };
+}
+
 // --- dispatcher -------------------------------------------------------------
 export async function executeTool(
   name: string,
@@ -279,11 +333,15 @@ export async function executeTool(
       case "web_search":
         return await webSearch(args as { query?: string; max_results?: number }, ctx);
       case "run_code":
-        return await runCode(args as { code?: string }, ctx);
+        return await runCode(args as { code?: string });
       case "generate_image":
         return await generateImage(args as { prompt?: string; size?: string }, ctx);
       case "read_file":
         return await readFile(args as { name?: string }, ctx);
+      case "calculator":
+        return await calculator(args as { expression?: string; precision?: number });
+      case "get_weather":
+        return await getWeather(args as { location?: string; units?: string }, ctx);
       case "get_current_time":
         return await getCurrentTime(args as { timezone?: string });
       default:

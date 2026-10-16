@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type {
   Attachment,
+  ChatMode,
   ChatStreamEvent,
   Conversation,
   Message,
@@ -15,12 +16,21 @@ import { DEFAULT_MODEL } from "@/lib/ai/client";
 // Streaming updates mutate the in-flight assistant message in place.
 // ---------------------------------------------------------------------------
 
+interface SendOptions {
+  attachments?: Attachment[];
+  /** Defaults to `send`. */
+  mode?: ChatMode;
+  /** Required when `mode` is `edit`. */
+  targetMessageId?: string;
+}
+
 interface ChatState {
   conversations: Conversation[];
   activeId: string | null;
   messages: Message[];
   model: string;
   enabledTools: string[];
+  toolsInitialised: boolean;
   isStreaming: boolean;
   error: string | null;
   sidebarOpen: boolean;
@@ -36,6 +46,7 @@ interface ChatState {
   setModel: (m: string) => void;
   toggleTool: (name: string) => void;
   setEnabledTools: (names: string[]) => void;
+  initEnabledTools: (names: string[]) => void;
   setSidebarOpen: (open: boolean) => void;
   setToolsPanelOpen: (open: boolean) => void;
   setError: (e: string | null) => void;
@@ -44,14 +55,24 @@ interface ChatState {
 
   loadConversations: () => Promise<void>;
   loadConversation: (id: string) => Promise<void>;
-  sendMessage: (text: string, attachments?: Attachment[]) => Promise<void>;
+  sendMessage: (text: string, options?: SendOptions | Attachment[]) => Promise<void>;
+  regenerate: () => Promise<void>;
+  editMessage: (messageId: string, text: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
+  archiveConversation: (id: string) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
 }
 
 function tempId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Accept either the legacy `sendMessage(text, attachments)` or an options bag. */
+function normaliseOptions(options?: SendOptions | Attachment[]): SendOptions {
+  if (Array.isArray(options)) return { attachments: options };
+  return options ?? {};
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -60,6 +81,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   model: DEFAULT_MODEL,
   enabledTools: [],
+  toolsInitialised: false,
   isStreaming: false,
   error: null,
   sidebarOpen: false,
@@ -91,6 +113,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? s.enabledTools.filter((t) => t !== name)
         : [...s.enabledTools, name],
     })),
+  /**
+   * Seed the enabled-tool set from the server the FIRST time the tools panel
+   * loads. A flag (not `enabledTools.length === 0`) guards this so a user who
+   * deliberately switches every tool off does not have them all turned back on
+   * the next time the panel opens.
+   */
+  initEnabledTools: (names) =>
+    set((s) => (s.toolsInitialised ? s : { enabledTools: names, toolsInitialised: true })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setToolsPanelOpen: (toolsPanelOpen) => set({ toolsPanelOpen }),
   setError: (error) => set({ error }),
@@ -143,14 +173,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // --- streaming send ------------------------------------------------------
-  sendMessage: async (text, attachments = []) => {
+  sendMessage: async (text, rawOptions) => {
     const trimmed = text.trim();
+    const options = normaliseOptions(rawOptions);
+    const mode: ChatMode = options.mode ?? "send";
+    const attachments = options.attachments ?? [];
+
     if (!trimmed || get().isStreaming) return;
 
-    const { activeId, model, enabledTools } = get();
+    const { activeId, model, enabledTools, messages } = get();
+
+    // Regenerate and edit replay an existing turn, so they need a conversation.
+    if (mode !== "send" && !activeId) return;
+
     const controller = new AbortController();
 
-    // Optimistic user message.
     const optimisticUser: Message = {
       id: tempId("user"),
       conversation_id: activeId ?? "pending",
@@ -177,8 +214,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       tool_calls: [],
     };
 
-    set((s) => ({
-      messages: [...s.messages, optimisticUser, optimisticAssistant],
+    // Optimistically reshape the thread per mode so the UI never shows a
+    // duplicated user message or a stale reply while the server catches up.
+    let baseMessages: Message[];
+    if (mode === "regenerate") {
+      let lastUserId = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          lastUserId = i;
+          break;
+        }
+      }
+      baseMessages = lastUserId === -1 ? messages : messages.slice(0, lastUserId + 1);
+    } else if (mode === "edit") {
+      const targetId = options.targetMessageId;
+      const idx = messages.findIndex((m) => m.id === targetId);
+      if (idx === -1) return;
+      baseMessages = messages.slice(0, idx);
+      optimisticUser.id = targetId as string;
+    } else {
+      baseMessages = messages;
+    }
+
+    set(() => ({
+      messages: [...baseMessages, optimisticUser, optimisticAssistant],
       isStreaming: true,
       error: null,
       abortController: controller,
@@ -200,6 +259,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           model,
           attachments,
           enabledTools,
+          mode,
+          targetMessageId: options.targetMessageId,
         }),
       });
 
@@ -301,10 +362,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ error: err instanceof Error ? err.message : "Something went wrong." });
       }
     } finally {
-      set({ isStreaming: false, abortController: null });
-      // Refresh the sidebar so titles/ordering are authoritative.
+      // Drop an assistant bubble that never received text or tool activity —
+      // otherwise a failed or stopped turn leaves an empty message behind.
+      set((s) => ({
+        messages: s.messages.filter(
+          (m) =>
+            m.id !== assistantId ||
+            m.content.trim().length > 0 ||
+            (m.tool_calls?.length ?? 0) > 0,
+        ),
+        isStreaming: false,
+        abortController: null,
+      }));
+
+      // Reload from the server so IDs, ordering and titles are authoritative.
+      const convId = get().activeId;
+      if (convId) void get().loadConversation(convId);
       void get().loadConversations();
     }
+  },
+
+  /** Re-run the model for the last user turn, replacing the previous reply. */
+  regenerate: async () => {
+    const { messages, isStreaming, activeId } = get();
+    if (isStreaming || !activeId) return;
+
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+
+    await get().sendMessage(lastUser.content, {
+      mode: "regenerate",
+      attachments: lastUser.attachments ?? [],
+    });
+  },
+
+  /** Rewrite an existing user message and re-run the model from that point. */
+  editMessage: async (messageId, text) => {
+    const trimmed = text.trim();
+    const { isStreaming } = get();
+    if (!trimmed || isStreaming) return;
+
+    await get().sendMessage(trimmed, { mode: "edit", targetMessageId: messageId });
+  },
+
+  /** Remove a single message from the thread (optimistic, then persisted). */
+  deleteMessage: async (messageId) => {
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }));
+    await fetch(`/api/messages/${messageId}`, { method: "DELETE" }).catch(() => {});
   },
 
   // --- mutations -----------------------------------------------------------
@@ -323,6 +427,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
     }).catch(() => {});
+  },
+
+  /**
+   * Archive a conversation. The list endpoint excludes archived rows, so the
+   * thread disappears from the sidebar immediately but the data is retained.
+   */
+  archiveConversation: async (id) => {
+    get().removeConversation(id);
+    await fetch(`/api/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    }).catch(() => {});
+    void get().loadConversations();
   },
 
   togglePin: async (id) => {
