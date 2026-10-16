@@ -52,8 +52,33 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # NOT android-actions/setup-android@v3: it runs `sdkmanager tools`, and the
+      # `tools` package no longer exists in the SDK repository, so the action
+      # exits 1 before any build step runs ("Failed to find package 'tools'").
+      # The ubuntu-latest image already ships the SDK, so configure it directly
+      # and install only the components this build actually needs.
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$SDK" ]; then
+            echo "::error::No Android SDK at $SDK"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+          SDKMGR="$(find "$SDK/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort | tail -1)"
+          if [ -z "$SDKMGR" ]; then
+            echo "::error::sdkmanager not found under $SDK/cmdline-tools"
+            exit 1
+          fi
+          echo "Using $SDKMGR"
+
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" "platform-tools" "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -5
+
+          echo "Installed build-tools:"
+          ls "$SDK/build-tools"
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -136,7 +161,11 @@ jobs:
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           echo "APK: $APK"
           ls -lh "$APK"
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$APK"
+          # Resolve apksigner rather than hardcoding a build-tools version, so a
+          # runner image that ships a different one still verifies.
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort | tail -1)"
+          echo "Using $APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
 
       - name: Stage APK
         run: |
