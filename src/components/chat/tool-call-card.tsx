@@ -3,9 +3,11 @@
 import * as React from "react";
 import {
   AlertTriangle,
+  Calculator,
   Check,
   ChevronDown,
   Clock,
+  CloudSun,
   FileText,
   Globe,
   Image as ImageIcon,
@@ -25,6 +27,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   FileText,
   Clock,
   Wrench,
+  Calculator,
+  CloudSun,
 };
 
 const LABELS: Record<string, string> = {
@@ -33,6 +37,8 @@ const LABELS: Record<string, string> = {
   generate_image: "Generate image",
   read_file: "Read file",
   get_current_time: "Current time",
+  calculator: "Calculator",
+  get_weather: "Weather",
 };
 
 function summariseArgs(name: string, args: Record<string, unknown>): string {
@@ -47,6 +53,10 @@ function summariseArgs(name: string, args: Record<string, unknown>): string {
       return String(args.name ?? "");
     case "get_current_time":
       return String(args.timezone ?? "UTC");
+    case "calculator":
+      return String(args.expression ?? "").slice(0, 80);
+    case "get_weather":
+      return String(args.location ?? "");
     default:
       return JSON.stringify(args).slice(0, 80);
   }

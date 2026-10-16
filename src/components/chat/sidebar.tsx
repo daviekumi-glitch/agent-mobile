@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  Archive,
   LogOut,
   MessageSquarePlus,
   MoreHorizontal,
@@ -56,6 +57,7 @@ export function Sidebar({
     deleteConversation,
     renameConversation,
     togglePin,
+    archiveConversation,
     reset,
   } = useChatStore();
 
@@ -218,6 +220,10 @@ export function Sidebar({
                             <DropdownMenuItem onClick={() => void togglePin(c.id)}>
                               {c.pinned ? <PinOff /> : <Pin />}
                               {c.pinned ? "Unpin" : "Pin"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => void archiveConversation(c.id)}>
+                              <Archive />
+                              Archive
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

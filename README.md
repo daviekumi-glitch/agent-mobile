@@ -11,11 +11,14 @@ Next.js 15 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Supabase �
 |---|---|
 | **Streaming chat** | Token-by-token NDJSON stream from `/api/chat`, rendered live |
 | **Markdown + code** | GitHub-flavoured Markdown, syntax highlighting, per-block copy buttons |
+| **Message actions** | Regenerate, edit & resend, copy, delete, per-message timestamps |
+| **In-thread search** | ⌘F / Ctrl+F search with match navigation and highlighting |
+| **Export** | Download the thread as Markdown or JSON, or copy the transcript |
 | **Tool calling** | The model calls tools mid-turn; each call renders as an expandable card |
 | **Skills panel** | Toggle individual tools or whole skill bundles per chat |
 | **Model picker** | Switch between GPT-4o / 4.1 / o4-mini per conversation |
 | **Attachments** | Upload images, PDFs, CSV, markdown, source files (Supabase Storage) |
-| **Conversation history** | Sidebar with search, pin, rename, delete, time-bucketed grouping |
+| **Conversation history** | Sidebar with search, pin, rename, archive, delete, time-bucketed grouping |
 | **Auth** | Supabase email/password with SSR cookie sessions and route guards |
 | **Theming** | Light / dark / system, custom design tokens, mobile-first responsive |
 | **Security** | Row Level Security on every table, owner-scoped queries throughout |
@@ -25,6 +28,8 @@ Next.js 15 (App Router) · TypeScript · Tailwind CSS · shadcn/ui · Supabase �
 | Tool | Skill | Requires |
 |---|---|---|
 | `web_search` | Web Research | `TAVILY_API_KEY` |
+| `get_weather` | Web Research | `OPENWEATHER_API_KEY` |
+| `calculator` | Math & Data | — |
 | `run_code` | Code Execution | `ENABLE_CODE_EXECUTION=1` |
 | `generate_image` | Image Generation | `OPENAI_API_KEY` |
 | `read_file` | File Reading | — |
@@ -77,6 +82,7 @@ cp .env.example .env.local
 | `OPENAI_API_KEY` | ✅ | LLM provider key |
 | `OPENAI_BASE_URL` | — | Point at any OpenAI-compatible gateway |
 | `TAVILY_API_KEY` | — | Enables the `web_search` tool |
+| `OPENWEATHER_API_KEY` | — | Enables the `get_weather` tool |
 | `ENABLE_CODE_EXECUTION` | — | `1` enables the `run_code` tool |
 | `NEXT_PUBLIC_SITE_URL` | — | Canonical URL, used for auth redirects |
 
@@ -106,6 +112,7 @@ src/
 │   │   ├── chat/route.ts              # streaming chat + tool-calling loop
 │   │   ├── conversations/route.ts     # list / create
 │   │   ├── conversations/[id]/route.ts# get / patch / delete
+│   │   ├── messages/[id]/route.ts     # delete a single message
 │   │   ├── tools/route.ts             # model + skill + tool metadata
 │   │   └── upload/route.ts            # attachment upload → Storage
 │   ├── auth/callback/route.ts         # OAuth / email code exchange
@@ -117,7 +124,7 @@ src/
 │   ├── chat/
 │   │   ├── chat-shell.tsx             # layout composition
 │   │   ├── sidebar.tsx                # history, search, pin, rename, delete
-│   │   ├── message-thread.tsx         # auto-scroll + scroll-to-bottom
+│   │   ├── message-thread.tsx         # auto-scroll + in-thread search
 │   │   ├── message-bubble.tsx         # user/assistant bubbles + actions
 │   │   ├── markdown.tsx               # markdown + copyable code blocks
 │   │   ├── tool-call-card.tsx         # expandable tool-call card
@@ -131,6 +138,9 @@ src/
 │   ├── ai/client.ts                   # OpenAI client + model registry
 │   ├── tools/registry.ts              # tool/skill definitions + JSON schemas
 │   ├── tools/executor.ts              # server-side tool implementations
+│   ├── tools/calculator.ts            # safe arithmetic evaluator (no eval)
+│   ├── tools/weather.ts               # weather response mapper
+│   ├── export.ts                      # Markdown / JSON conversation export
 │   ├── store/chat-store.ts            # zustand store + stream reducer
 │   ├── supabase/{client,server,middleware}.ts
 │   └── types.ts                       # domain + stream protocol types
@@ -149,6 +159,19 @@ src/
    into the loop (max 5 iterations).
 5. The store reduces each NDJSON event into the in-flight message; the final text
    is written back to Postgres.
+
+### Turn modes
+
+`POST /api/chat` accepts a `mode` field:
+
+| Mode | Behaviour |
+|---|---|
+| `send` (default) | Appends a new user message and answers it |
+| `regenerate` | Re-runs the last user turn; the previous assistant reply is replaced, not appended |
+| `edit` | Rewrites the target user message, drops everything after it, and re-runs |
+
+Because the previous reply is deleted server-side *and* the client optimistically
+truncates the thread, regenerating never duplicates the user's message.
 
 ### Stream protocol
 
@@ -204,6 +227,27 @@ The app is a standard Next.js deployment — Vercel, Fly.io, Docker, or any Node
 2. Add your production URL to Supabase **Authentication → URL Configuration**
    (Site URL and redirect URLs, including `/auth/callback`).
 3. Deploy. `npm run build` is the build command; `npm run start` serves it.
+
+---
+
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request
+targeting `main`, and on every push to `main`:
+
+1. `npm install` — install dependencies
+2. `npm run typecheck` — `tsc --noEmit`, must be clean
+3. `npm run lint` — advisory (non-blocking)
+4. `npm run build` — the production build must succeed
+
+The workflow supplies placeholder `NEXT_PUBLIC_*` and server secrets so the build
+can run without real credentials; no step reaches Supabase or the LLM provider.
+
+> **Note on the lockfile:** this repository does not currently track
+> `package-lock.json`. The install step therefore uses `npm install` so CI works
+> on a cold checkout. Recommended follow-up: commit the lockfile, then switch the
+> step to `npm ci` and add `cache: npm` to `actions/setup-node` for reproducible,
+> faster installs.
 
 ---
 

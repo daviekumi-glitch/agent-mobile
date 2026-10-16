@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import {
+  Calculator,
   Clock,
+  CloudSun,
   FileText,
   Globe,
   Image as ImageIcon,
@@ -25,6 +27,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Clock,
   Wrench,
   Zap,
+  Calculator,
+  CloudSun,
 };
 
 interface ToolMeta {
@@ -46,8 +50,14 @@ interface SkillMeta {
 }
 
 export function ToolsPanel() {
-  const { enabledTools, toggleTool, setEnabledTools, toolsPanelOpen, setToolsPanelOpen } =
-    useChatStore();
+  const {
+    enabledTools,
+    toggleTool,
+    setEnabledTools,
+    initEnabledTools,
+    toolsPanelOpen,
+    setToolsPanelOpen,
+  } = useChatStore();
   const [tools, setTools] = React.useState<ToolMeta[]>([]);
   const [skills, setSkills] = React.useState<SkillMeta[]>([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -62,10 +72,9 @@ export function ToolsPanel() {
         if (cancelled) return;
         setTools(json.tools ?? []);
         setSkills(json.skills ?? []);
-        // Default: enable every tool that is actually usable.
-        if (useChatStore.getState().enabledTools.length === 0) {
-          setEnabledTools((json.tools ?? []).filter((t) => t.available).map((t) => t.name));
-        }
+        // Default: enable every tool that is actually usable — but only once,
+        // so switching all tools off is not undone on the next panel open.
+        initEnabledTools((json.tools ?? []).filter((t) => t.available).map((t) => t.name));
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -73,7 +82,7 @@ export function ToolsPanel() {
     return () => {
       cancelled = true;
     };
-  }, [setEnabledTools]);
+  }, [initEnabledTools]);
 
   const activeCount = enabledTools.length;
 
