@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn, formatClock, formatFullTime, initials } from "@/lib/utils";
+import { VariantSwitcher } from "@/components/chat/variant-switcher";
 import type { Message } from "@/lib/types";
 
 function CopyMessageButton({ content }: { content: string }) {
@@ -113,6 +114,9 @@ export function MessageBubble({
   onRegenerate,
   onEdit,
   onDelete,
+  variantIndex,
+  variantCount,
+  onSelectVariant,
 }: {
   message: Message;
   userName?: string | null;
@@ -121,6 +125,11 @@ export function MessageBubble({
   onRegenerate?: () => void;
   onEdit?: (messageId: string, text: string) => void;
   onDelete?: (messageId: string) => void;
+  /** Zero-based index of this answer within its variant group. */
+  variantIndex?: number;
+  /** How many answers exist for this turn (1 = no switcher shown). */
+  variantCount?: number;
+  onSelectVariant?: (index: number) => void;
 }) {
   const [editing, setEditing] = React.useState(false);
   const isUser = message.role === "user";
@@ -142,7 +151,7 @@ export function MessageBubble({
                   key={a.id}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-2xs text-muted-foreground"
                 >
-                  {a.mime.startsWith("image/") ? "\ud83d\uddbc" : "\ud83d\udcc4"} {a.name}
+                  {a.mime.startsWith("image/") ? "Image" : "File"}: {a.name}
                 </span>
               ))}
             </div>
@@ -248,6 +257,15 @@ export function MessageBubble({
               {formatClock(message.created_at)}
             </span>
             <CopyMessageButton content={message.content} />
+            {variantCount !== undefined && variantCount > 1 && onSelectVariant && (
+              <VariantSwitcher
+                index={variantIndex ?? variantCount - 1}
+                total={variantCount}
+                onSelect={onSelectVariant}
+                disabled={isStreaming}
+                className="ml-0.5"
+              />
+            )}
             {canAct && onRegenerate && (
               <Button
                 variant="ghost"

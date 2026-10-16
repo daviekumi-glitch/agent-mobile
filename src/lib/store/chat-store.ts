@@ -12,7 +12,7 @@ import type {
 import { DEFAULT_MODEL } from "@/lib/ai/client";
 
 // ---------------------------------------------------------------------------
-// Chat store — the single source of truth for the client.
+// Chat store - the single source of truth for the client.
 // Streaming updates mutate the in-flight assistant message in place.
 // ---------------------------------------------------------------------------
 
@@ -35,6 +35,9 @@ interface ChatState {
   error: string | null;
   sidebarOpen: boolean;
   toolsPanelOpen: boolean;
+  settingsOpen: boolean;
+  /** Conversation-scoped map of variant group id -> chosen answer index. */
+  selectedVariants: Record<string, number>;
   abortController: AbortController | null;
 
   // --- actions
@@ -49,6 +52,10 @@ interface ChatState {
   initEnabledTools: (names: string[]) => void;
   setSidebarOpen: (open: boolean) => void;
   setToolsPanelOpen: (open: boolean) => void;
+  setSettingsOpen: (open: boolean) => void;
+  /** Switch on one or more tools (used by the `/` command palette). */
+  enableTools: (names: string[]) => void;
+  setVariant: (groupId: string, index: number) => void;
   setError: (e: string | null) => void;
   stop: () => void;
   reset: () => void;
@@ -69,6 +76,18 @@ function tempId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * True when a stored assistant message is a leftover placeholder.
+ *
+ * Regenerating keeps the previous answer as a variant, so the collapsing logic
+ * in `src/lib/variants.ts` sees a run of assistant messages. An interrupted turn
+ * can leave an empty one behind, which would otherwise be picked as "newest"
+ * and shown as a blank bubble. Dropping them here keeps that from happening.
+ */
+function isUsableAssistant(message: Message): boolean {
+  return message.content.trim().length > 0 || (message.tool_calls?.length ?? 0) > 0;
+}
+
 /** Accept either the legacy `sendMessage(text, attachments)` or an options bag. */
 function normaliseOptions(options?: SendOptions | Attachment[]): SendOptions {
   if (Array.isArray(options)) return { attachments: options };
@@ -86,6 +105,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   sidebarOpen: false,
   toolsPanelOpen: false,
+  settingsOpen: false,
+  selectedVariants: {},
   abortController: null,
 
   setConversations: (conversations) => set({ conversations }),
@@ -123,6 +144,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => (s.toolsInitialised ? s : { enabledTools: names, toolsInitialised: true })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setToolsPanelOpen: (toolsPanelOpen) => set({ toolsPanelOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  enableTools: (names) =>
+    set((s) => ({
+      enabledTools: Array.from(new Set([...s.enabledTools, ...names])),
+      toolsInitialised: true,
+    })),
+  setVariant: (groupId, index) =>
+    set((s) => ({ selectedVariants: { ...s.selectedVariants, [groupId]: index } })),
   setError: (error) => set({ error }),
 
   stop: () => {
@@ -137,6 +166,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       error: null,
       isStreaming: false,
       abortController: null,
+      // Variant selections are conversation-scoped, so they reset with the
+      // thread rather than leaking a stale index into the next conversation.
+      selectedVariants: {},
     }),
 
   // --- data loading --------------------------------------------------------
@@ -147,12 +179,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const json = (await res.json()) as { conversations: Conversation[] };
       set({ conversations: json.conversations ?? [] });
     } catch {
-      /* offline — keep whatever we have */
+      /* offline - keep whatever we have */
     }
   },
 
   loadConversation: async (id) => {
-    set({ activeId: id, messages: [], error: null });
+    // A different thread means a different set of variant groups.
+    set({ activeId: id, messages: [], error: null, selectedVariants: {} });
     try {
       const res = await fetch(`/api/conversations/${id}`);
       if (!res.ok) {
@@ -164,7 +197,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: Message[];
       };
       set({
-        messages: json.messages ?? [],
+        messages: (json.messages ?? []).filter(
+          (m) => m.role !== "assistant" || isUsableAssistant(m),
+        ),
         model: json.conversation?.model ?? get().model,
       });
     } catch {
@@ -362,7 +397,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ error: err instanceof Error ? err.message : "Something went wrong." });
       }
     } finally {
-      // Drop an assistant bubble that never received text or tool activity —
+      // Drop an assistant bubble that never received text or tool activity -
       // otherwise a failed or stopped turn leaves an empty message behind.
       set((s) => ({
         messages: s.messages.filter(
@@ -382,7 +417,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  /** Re-run the model for the last user turn, replacing the previous reply. */
+  /** Re-run the model for the last user turn, keeping the previous answer. */
   regenerate: async () => {
     const { messages, isStreaming, activeId } = get();
     if (isStreaming || !activeId) return;

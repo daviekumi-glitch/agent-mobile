@@ -6,6 +6,7 @@ import { MessageBubble } from "@/components/chat/message-bubble";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { groupAssistantVariants, visibleMessages } from "@/lib/variants";
 import type { Message } from "@/lib/types";
 
 export function MessageThread({
@@ -15,6 +16,8 @@ export function MessageThread({
   onRegenerate,
   onEdit,
   onDelete,
+  selectedVariants,
+  onSelectVariant,
   className,
 }: {
   messages: Message[];
@@ -23,6 +26,9 @@ export function MessageThread({
   onRegenerate?: () => void;
   onEdit?: (messageId: string, text: string) => void;
   onDelete?: (messageId: string) => void;
+  /** Conversation-scoped map of variant group id -> chosen answer index. */
+  selectedVariants?: Record<string, number>;
+  onSelectVariant?: (groupId: string, index: number) => void;
   className?: string;
 }) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -60,11 +66,33 @@ export function MessageThread({
     return -1;
   }, [messages]);
 
+  // --- Variant collapsing --------------------------------------------------
+  // Several answers to one prompt are stored as consecutive assistant messages.
+  // Only the selected one is rendered; the switcher on the bubble changes the
+  // selection.
+  const groups = React.useMemo(() => groupAssistantVariants(messages), [messages]);
+  const rendered = React.useMemo(
+    () => visibleMessages(messages, selectedVariants ?? {}),
+    [messages, selectedVariants],
+  );
+
+  const variantInfo = React.useCallback(
+    (messageId: string) => {
+      for (const [groupId, variants] of groups) {
+        const index = variants.findIndex((v) => v.id === messageId);
+        if (index === -1) continue;
+        return { groupId, index, count: variants.length };
+      }
+      return null;
+    },
+    [groups],
+  );
+
   // --- In-conversation search ----------------------------------------------
   const needle = query.trim().toLowerCase();
   const matches = React.useMemo(() => {
     if (!needle) return [];
-    return messages
+    return rendered
       .filter((m) => m.role !== "system")
       .filter(
         (m) =>
@@ -72,7 +100,7 @@ export function MessageThread({
           (m.tool_calls ?? []).some((t) => t.name.toLowerCase().includes(needle)),
       )
       .map((m) => m.id);
-  }, [messages, needle]);
+  }, [rendered, needle]);
 
   // Keep the cursor in range as the result set changes.
   React.useEffect(() => {
@@ -109,8 +137,16 @@ export function MessageThread({
       }
       if (e.key === "Escape") closeSearch();
     };
+    // The composer's `/search` command reaches the same search box through a
+    // window event, so the two entry points share one implementation.
+    const onOpenSearch = () => setSearchOpen(true);
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("agent-mobile:open-search", onOpenSearch);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("agent-mobile:open-search", onOpenSearch);
+    };
   }, []);
 
   return (
@@ -162,7 +198,7 @@ export function MessageThread({
         </div>
       )}
 
-      {/* Search toggle — sits opposite the scroll-to-bottom button */}
+      {/* Search toggle - sits opposite the scroll-to-bottom button */}
       {!searchOpen && messages.length > 3 && (
         <Button
           variant="ghost"
@@ -170,7 +206,7 @@ export function MessageThread({
           onClick={() => setSearchOpen(true)}
           className="absolute right-3 top-2 z-20 rounded-full border border-border bg-card/90 shadow-sm backdrop-blur"
           aria-label="Search in conversation"
-          title="Search in conversation (⌘F)"
+          title="Search in conversation (Cmd+F)"
         >
           <Search className="size-3.5" />
         </Button>
@@ -182,28 +218,38 @@ export function MessageThread({
         className="scrollbar-thin h-full overflow-y-auto overscroll-contain"
       >
         <div className="mx-auto w-full max-w-3xl py-4">
-          {messages.map((m, i) => (
-            <div
-              key={m.id}
-              data-message-id={m.id}
-              className={cn(
-                "transition-colors",
-                needle && m.id === activeMatchId && "bg-brand/8",
-              )}
-            >
-              <MessageBubble
-                message={m}
-                userName={userName}
-                isLast={i === lastAssistantIndex && !isStreaming}
-                isStreaming={isStreaming}
-                onRegenerate={
-                  i === lastAssistantIndex && !isStreaming ? onRegenerate : undefined
-                }
-                onEdit={onEdit}
-                onDelete={onDelete}
-              />
-            </div>
-          ))}
+          {rendered.map((m, i) => {
+            const info = m.role === "assistant" ? variantInfo(m.id) : null;
+            return (
+              <div
+                key={m.id}
+                data-message-id={m.id}
+                className={cn(
+                  "transition-colors",
+                  needle && m.id === activeMatchId && "bg-brand/8",
+                )}
+              >
+                <MessageBubble
+                  message={m}
+                  userName={userName}
+                  isLast={i === lastAssistantIndex && !isStreaming}
+                  isStreaming={isStreaming}
+                  onRegenerate={
+                    i === lastAssistantIndex && !isStreaming ? onRegenerate : undefined
+                  }
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  variantIndex={info?.index}
+                  variantCount={info?.count}
+                  onSelectVariant={
+                    info && onSelectVariant
+                      ? (index) => onSelectVariant(info.groupId, index)
+                      : undefined
+                  }
+                />
+              </div>
+            );
+          })}
           <div className="h-6" />
         </div>
       </div>

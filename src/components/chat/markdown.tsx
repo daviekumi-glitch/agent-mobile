@@ -93,7 +93,7 @@ export function Markdown({ content, className }: { content: string; className?: 
             return <pre>{children}</pre>;
           },
           code({ className, children, ...props }) {
-            // Inline code (no language class, single line) — block code is
+            // Inline code (no language class, single line) - block code is
             // handled by the `pre` override above.
             return (
               <code className={className} {...props}>
@@ -109,8 +109,10 @@ export function Markdown({ content, className }: { content: string; className?: 
             );
           },
           img({ src, alt, ...props }) {
-            // eslint-disable-next-line @next/next/no-img-element
             return (
+              // Images in model output are remote and arbitrary, so next/image
+              // (which needs allow-listed hosts) is not applicable here.
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={typeof src === "string" ? src : ""}
                 alt={alt ?? ""}
