@@ -264,6 +264,7 @@ targeting `main`, and on every push to `main`:
 **`verify` job**
 
 1. `npm ci` -- reproducible install from the committed lockfile, with npm caching
+   (see the lockfile caveat below)
 2. `npm run typecheck` -- `tsc --noEmit`, must be clean
 3. `npm run lint` -- advisory (non-blocking)
 4. `npm test` -- the vitest suite, must pass
@@ -279,6 +280,28 @@ targeting `main`, and on every push to `main`:
 Both jobs supply placeholder `NEXT_PUBLIC_*` and server secrets so the build can
 run without real credentials; no step reaches Supabase or the LLM provider. The
 full chat flow self-skips without `E2E_AUTH_*` credentials.
+
+**Lockfile caveat.** `package-lock.json` is not currently in the repository. The
+lockfile is ~429 KB and the commit path used to publish this project is text-only
+with a smaller per-file ceiling, so it could not be carried across. A 429 KB
+lockfile is also well under GitHub's own 100 MB file limit, so there is no
+inherent obstacle to committing it.
+
+Both workflows therefore install **adaptively**: they run `npm ci` when the
+lockfile is present and fall back to `npm install` with a `::warning::` when it is
+not. Caching is keyed the same way -- `cache` is set to `npm` only when a lockfile
+is in the checkout, because `actions/setup-node` fails outright if it is told to
+cache npm without one to hash. Commit the lockfile and both workflows switch to
+`npm ci` plus lockfile-keyed caching on the next run, with no further edits:
+
+```bash
+npm ci                       # lockfile already installed locally
+npm run typecheck && npm test && npm run build
+git add package-lock.json && git commit -m "chore: commit the lockfile" && git push
+```
+
+Once the file is guaranteed present, the `if [ -f package-lock.json ]` guard in
+each workflow can be dropped and the install step reduced to plain `npm ci`.
 
 ---
 
@@ -447,6 +470,48 @@ adb install -r android/app/build/outputs/apk/release/app-release.apk
 
 Or transfer the `.apk` to the device and open it -- Android will ask you to allow
 installation from that source.
+
+### Reproducing the Android project
+
+Most of the Android project is committed as text. A few **binaries are not** in
+the repository, because they cannot be carried through the text-only commit path
+used to publish this project:
+
+| Uncommitted asset | How to reproduce it |
+|---|---|
+| `android/gradle/wrapper/gradle-wrapper.jar` | re-download from the [Gradle 8.2.1 distribution](https://raw.githubusercontent.com/gradle/gradle/v8.2.1/gradle/wrapper/gradle-wrapper.jar), or run `npx cap add android` in a scratch directory |
+| `android/app/src/main/res/**/*.png` | `python3 scripts/generate-android-assets.py --icon assets/icon.png --splash assets/splash.png` (needs Pillow) |
+| `assets/icon.png`, `assets/splash.png` | source artwork -- regenerate or supply your own square PNGs |
+| `android/local.properties` | machine-local; write `sdk.dir=/path/to/android-sdk` (never committed) |
+
+The [`android-release.yml`](.github/workflows/android-release.yml) workflow
+fetches the wrapper JAR and regenerates the res/ bitmaps from `assets/`, then
+fails with an explicit message naming anything it still cannot obtain -- so a
+missing binary produces a clear error, not a cryptic Gradle stack trace.
+
+The workflow also assembles the APK with a bounded heap (`--max-workers=2`,
+`-Xmx768m`). That matters on small runners: a release build over a 64-CPU host
+derives its parallelism from `nproc`, and an unbounded worker count is enough to
+exceed a 2 GB container cap and take the Gradle daemon down mid-build.
+
+A clean local rebuild, when every asset is present:
+
+```bash
+cd android && ./gradlew assembleRelease
+```
+
+Confirmed working: that invocation produced `app-release.apk`, **8,974,195 bytes
+(~8.6 MB)**, `BUILD SUCCESSFUL`, signed and verified with
+
+```
+apksigner verify --verbose --print-certs app-release.apk
+  Verified using v1 scheme (JAR signing): true
+  Verified using v2 scheme (APK Signature Scheme v2): true
+  Signer #1 certificate DN: CN=Agent Mobile
+```
+
+The manifest reports `package=com.daviekumi.agentmobile`, `label='Agent Mobile'`,
+`minSdk 22 / targetSdk 34`.
 
 ### Automated builds
 
