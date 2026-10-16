@@ -2,7 +2,7 @@ import OpenAI from "openai";
 
 /**
  * Shared OpenAI-compatible client.
- * Point OPENAI_BASE_URL at any compatible gateway (OpenRouter, Groq, vLLM…).
+ * Point OPENAI_BASE_URL at any compatible gateway (OpenRouter, Groq, vLLMΓÇª).
  */
 export function getLLMClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -31,7 +31,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "gpt-4o-mini",
     label: "GPT-4o mini",
-    description: "Fast and cheap — great default for everyday chat.",
+    description: "Fast and cheap ΓÇö great default for everyday chat.",
     context: "128K",
     tools: true,
   },
@@ -59,15 +59,21 @@ export const MODELS: ModelOption[] = [
   {
     id: "o4-mini",
     label: "o4-mini",
-    description: "Reasoning model — slower, better at hard problems.",
+    description: "Reasoning model ΓÇö slower, better at hard problems.",
     context: "200K",
     tools: true,
   },
 ];
 
+/**
+ * The model a conversation falls back to. Exported so the client store can seed
+ * its initial state from the same source of truth the server defaults to ΓÇö a
+ * hard-coded copy in the store would silently drift from the model registry.
+ */
 export const DEFAULT_MODEL = "gpt-4o-mini";
 
-export function isKnownModel(id: string): boolean {
+/** True when `id` names a model in the registry. Narrows the type for callers. */
+export function isKnownModel(id: string | null | undefined): id is string {
   return MODELS.some((m) => m.id === id);
 }
 

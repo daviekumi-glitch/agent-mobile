@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { NativeShell } from "@/components/native/native-shell";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -19,8 +20,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Agent Mobile — AI chat with skills & tools",
-    template: "%s · Agent Mobile",
+    default: "Agent Mobile ΓÇö AI chat with skills & tools",
+    template: "%s ┬╖ Agent Mobile",
   },
   description:
     "A ChatGPT-style AI assistant with web search, code execution, image generation and file reading built into the conversation.",
@@ -51,16 +52,18 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider delayDuration={200}>
-            {children}
-            <Toaster
-              position="top-center"
-              toastOptions={{
-                classNames: {
-                  toast:
-                    "rounded-xl border border-border bg-card text-card-foreground shadow-lg",
-                },
-              }}
-            />
+            <NativeShell>
+              {children}
+              <Toaster
+                position="top-center"
+                toastOptions={{
+                  classNames: {
+                    toast:
+                      "rounded-xl border border-border bg-card text-card-foreground shadow-lg",
+                  },
+                }}
+              />
+            </NativeShell>
           </TooltipProvider>
         </ThemeProvider>
       </body>
