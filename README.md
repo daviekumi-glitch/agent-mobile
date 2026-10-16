@@ -1,7 +1,7 @@
 # Agent Mobile
 
 A ChatGPT-style AI chat application with **skills and tools** built into the conversation.
-Next.js 15 (App Router) ┬╖ TypeScript ┬╖ Tailwind CSS ┬╖ shadcn/ui ┬╖ Supabase ┬╖ streaming responses.
+Next.js 15 (App Router) | TypeScript | Tailwind CSS | shadcn/ui | Supabase | streaming responses.
 
 ---
 
@@ -12,10 +12,10 @@ Next.js 15 (App Router) ┬╖ TypeScript ┬╖ Tailwind CSS ┬╖ shadcn/ui �
 | **Streaming chat** | Token-by-token NDJSON stream from `/api/chat`, rendered live |
 | **Markdown + code** | GitHub-flavoured Markdown, syntax highlighting, per-block copy buttons |
 | **Message actions** | Regenerate, edit & resend, copy, delete, per-message timestamps |
-| **Response variants** | Regenerating keeps previous answers ΓÇö switch between them with `ΓÇ╣ 2/3 ΓÇ║` |
+| **Response variants** | Regenerating keeps previous answers -- switch between them with `< 2/3 >` |
 | **Slash commands** | Type `/` in the composer for tools, skills and actions |
 | **User settings** | Per-user default model and a standing custom instruction |
-| **In-thread search** | ΓîÿF / Ctrl+F search with match navigation and highlighting |
+| **In-thread search** | Cmd+F / Ctrl+F search with match navigation and highlighting |
 | **Export** | Download the thread as Markdown or JSON, or copy the transcript |
 | **Tool calling** | The model calls tools mid-turn; each call renders as an expandable card |
 | **Skills panel** | Toggle individual tools or whole skill bundles per chat |
@@ -32,14 +32,14 @@ Next.js 15 (App Router) ┬╖ TypeScript ┬╖ Tailwind CSS ┬╖ shadcn/ui �
 |---|---|---|
 | `web_search` | Web Research | `TAVILY_API_KEY` |
 | `get_weather` | Web Research | `OPENWEATHER_API_KEY` |
-| `calculator` | Math & Data | ΓÇö |
+| `calculator` | Math & Data | -- |
 | `run_code` | Code Execution | `ENABLE_CODE_EXECUTION=1` |
 | `generate_image` | Image Generation | `OPENAI_API_KEY` |
-| `read_file` | File Reading | ΓÇö |
-| `get_current_time` | Utilities | ΓÇö |
+| `read_file` | File Reading | -- |
+| `get_current_time` | Utilities | -- |
 
 Tools whose env var is missing are shown as **disabled** in the panel rather than
-silently failing ΓÇö the model is told the tool is unavailable and answers without it.
+silently failing -- the model is told the tool is unavailable and answers without it.
 
 ---
 
@@ -69,7 +69,7 @@ npm install
    supabase db push
    ```
 
-3. In **Authentication ΓåÆ Providers**, make sure **Email** is enabled.
+3. In **Authentication > Providers**, make sure **Email** is enabled.
    For local development, turn **Confirm email** off so signup logs you straight in.
 
 ### 3. Configure environment
@@ -80,16 +80,16 @@ cp .env.example .env.local
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Γ£à | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Γ£à | Public anon key (RLS still applies) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Γ£à | Server-only privileged key ΓÇö never expose |
-| `OPENAI_API_KEY` | Γ£à | LLM provider key |
-| `OPENAI_BASE_URL` | ΓÇö | Point at any OpenAI-compatible gateway |
-| `TAVILY_API_KEY` | ΓÇö | Enables the `web_search` tool |
-| `OPENWEATHER_API_KEY` | ΓÇö | Enables the `get_weather` tool |
-| `ENABLE_CODE_EXECUTION` | ΓÇö | `1` enables the `run_code` tool |
-| `NEXT_PUBLIC_SITE_URL` | ΓÇö | Canonical URL, used for auth redirects |
-| `NEXT_PUBLIC_APP_URL` | ΓÇö | URL the packaged Android app loads |
+| `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Public anon key (RLS still applies) |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-only privileged key -- never expose |
+| `OPENAI_API_KEY` | yes | LLM provider key |
+| `OPENAI_BASE_URL` | no | Point at any OpenAI-compatible gateway |
+| `TAVILY_API_KEY` | no | Enables the `web_search` tool |
+| `OPENWEATHER_API_KEY` | no | Enables the `get_weather` tool |
+| `ENABLE_CODE_EXECUTION` | no | `1` enables the `run_code` tool |
+| `NEXT_PUBLIC_SITE_URL` | no | Canonical URL, used for auth redirects |
+| `NEXT_PUBLIC_APP_URL` | no | URL the packaged Android app loads |
 
 ### 4. Run
 
@@ -104,9 +104,9 @@ npm run build        # production build
 npm run start        # serve the production build
 npm run typecheck    # tsc --noEmit
 npm run lint         # next lint
-npm test             # vitest ΓÇö unit tests for pure logic
+npm test             # vitest -- unit tests for pure logic
 npm run test:watch   # vitest in watch mode
-npm run test:e2e     # playwright ΓÇö app shell + chat flow
+npm run test:e2e     # playwright -- app shell + chat flow
 ```
 
 ---
@@ -115,58 +115,59 @@ npm run test:e2e     # playwright ΓÇö app shell + chat flow
 
 ```
 src/
-Γö£ΓöÇΓöÇ app/
-Γöé   Γö£ΓöÇΓöÇ api/
-Γöé   Γöé   Γö£ΓöÇΓöÇ chat/route.ts              # streaming chat + tool-calling loop
-Γöé   Γöé   Γö£ΓöÇΓöÇ conversations/route.ts     # list / create
-Γöé   Γöé   Γö£ΓöÇΓöÇ conversations/[id]/route.ts# get / patch / delete
-Γöé   Γöé   Γö£ΓöÇΓöÇ messages/[id]/route.ts     # delete a single message
-Γöé   Γöé   Γö£ΓöÇΓöÇ tools/route.ts             # model + skill + tool metadata
-Γöé   Γöé   ΓööΓöÇΓöÇ upload/route.ts            # attachment upload ΓåÆ Storage
-Γöé   Γö£ΓöÇΓöÇ auth/callback/route.ts         # OAuth / email code exchange
-Γöé   Γö£ΓöÇΓöÇ chat/page.tsx                  # protected chat route
-Γöé   Γö£ΓöÇΓöÇ login/ ┬╖ register/             # auth pages
-Γöé   Γö£ΓöÇΓöÇ layout.tsx ┬╖ page.tsx          # shell + landing
-Γöé   ΓööΓöÇΓöÇ globals.css                    # design tokens + prose + hljs theme
-Γö£ΓöÇΓöÇ components/
-Γöé   Γö£ΓöÇΓöÇ chat/
-Γöé   Γöé   Γö£ΓöÇΓöÇ chat-shell.tsx             # layout composition
-Γöé   Γöé   Γö£ΓöÇΓöÇ sidebar.tsx                # history, search, pin, rename, delete
-Γöé   Γöé   Γö£ΓöÇΓöÇ message-thread.tsx         # auto-scroll + in-thread search
-Γöé   Γöé   Γö£ΓöÇΓöÇ message-bubble.tsx         # user/assistant bubbles + actions
-Γöé   Γöé   Γö£ΓöÇΓöÇ variant-switcher.tsx       # ΓÇ╣ 2/3 ΓÇ║ response variant control
-Γöé   Γöé   Γö£ΓöÇΓöÇ slash-command-palette.tsx  # `/` command palette
-Γöé   Γöé   Γö£ΓöÇΓöÇ settings-dialog.tsx        # default model + custom instruction
-Γöé   Γöé   Γö£ΓöÇΓöÇ markdown.tsx               # markdown + copyable code blocks
-Γöé   Γöé   Γö£ΓöÇΓöÇ tool-call-card.tsx         # expandable tool-call card
-Γöé   Γöé   Γö£ΓöÇΓöÇ composer.tsx               # input, attachments, send/stop
-Γöé   Γöé   Γö£ΓöÇΓöÇ model-picker.tsx           # model switcher
-Γöé   Γöé   Γö£ΓöÇΓöÇ tools-panel.tsx            # skills & tools configuration
-Γöé   Γöé   ΓööΓöÇΓöÇ empty-state.tsx            # designed empty state + suggestions
-Γöé   Γö£ΓöÇΓöÇ native/
-Γöé   Γöé   Γö£ΓöÇΓöÇ native-shell.tsx           # Capacitor shell gate
-Γöé   Γöé   ΓööΓöÇΓöÇ app-url-setup.tsx          # first-run backend URL prompt
-Γöé   Γö£ΓöÇΓöÇ auth/auth-form.tsx
-Γöé   ΓööΓöÇΓöÇ ui/                            # shadcn-style primitives
-Γö£ΓöÇΓöÇ lib/
-Γöé   Γö£ΓöÇΓöÇ ai/client.ts                   # OpenAI client + model registry
-Γöé   Γö£ΓöÇΓöÇ tools/registry.ts              # tool/skill definitions + JSON schemas
-Γöé   Γö£ΓöÇΓöÇ tools/executor.ts              # server-side tool implementations
-Γöé   Γö£ΓöÇΓöÇ tools/calculator.ts            # safe arithmetic evaluator (no eval)
-Γöé   Γö£ΓöÇΓöÇ tools/weather.ts               # weather response mapper
-Γöé   Γö£ΓöÇΓöÇ export.ts                      # Markdown / JSON conversation export
-Γöé   Γö£ΓöÇΓöÇ commands.ts                    # slash-command table + matcher
-Γöé   Γö£ΓöÇΓöÇ variants.ts                    # variant grouping (pure)
-Γöé   Γö£ΓöÇΓöÇ mobile/app-url.ts              # native URL resolution
-Γöé   Γö£ΓöÇΓöÇ mobile/preferences.ts          # persisted client preferences
-Γöé   Γö£ΓöÇΓöÇ mobile/nav.ts                  # external link handling
-Γöé   Γö£ΓöÇΓöÇ store/chat-store.ts            # zustand store + stream reducer
-Γöé   Γö£ΓöÇΓöÇ supabase/{client,server,middleware}.ts
-Γöé   ΓööΓöÇΓöÇ types.ts                       # domain + stream protocol types
-Γö£ΓöÇΓöÇ middleware.ts                      # session refresh + route guards
-e2e/chat.spec.ts                       # Playwright specs
-scripts/generate-android-assets.py     # icon + splash generator
-android/                               # Capacitor Android project
+  app/
+    api/
+      chat/route.ts               # streaming chat + tool-calling loop
+      conversations/route.ts      # list / create
+      conversations/[id]/route.ts # get / patch / delete
+      messages/[id]/route.ts      # delete a single message
+      profile/route.ts            # get / patch user preferences
+      tools/route.ts              # model + skill + tool metadata
+      upload/route.ts             # attachment upload -> Storage
+    auth/callback/route.ts        # OAuth / email code exchange
+    chat/page.tsx                 # protected chat route
+    login/ , register/            # auth pages
+    layout.tsx , page.tsx         # shell + landing
+    globals.css                   # design tokens + prose + hljs theme
+  components/
+    chat/
+      chat-shell.tsx              # layout composition
+      sidebar.tsx                 # history, search, pin, rename, delete
+      message-thread.tsx          # auto-scroll + in-thread search
+      message-bubble.tsx          # user/assistant bubbles + actions
+      variant-switcher.tsx        # < 2/3 > response variant control
+      slash-command-palette.tsx   # `/` command palette
+      settings-dialog.tsx         # default model + custom instruction
+      markdown.tsx                # markdown + copyable code blocks
+      tool-call-card.tsx          # expandable tool-call card
+      composer.tsx                # input, attachments, send/stop
+      model-picker.tsx            # model switcher
+      tools-panel.tsx             # skills & tools configuration
+      empty-state.tsx             # designed empty state + suggestions
+    native/
+      native-shell.tsx            # Capacitor shell gate
+      app-url-setup.tsx           # first-run backend URL prompt
+    auth/auth-form.tsx
+    ui/                           # shadcn-style primitives
+  lib/
+    ai/client.ts                  # OpenAI client + model registry
+    tools/registry.ts             # tool/skill definitions + JSON schemas
+    tools/executor.ts             # server-side tool implementations
+    tools/calculator.ts           # safe arithmetic evaluator (no eval)
+    tools/weather.ts              # weather response mapper
+    export.ts                     # Markdown / JSON conversation export
+    commands.ts                   # slash-command table + matcher
+    variants.ts                   # variant grouping (pure)
+    mobile/app-url.ts             # native URL resolution
+    mobile/preferences.ts         # persisted client preferences
+    mobile/nav.ts                 # external link handling
+    store/chat-store.ts           # zustand store + stream reducer
+    supabase/{client,server,middleware}.ts
+    types.ts                      # domain + stream protocol types
+  middleware.ts                   # session refresh + route guards
+e2e/chat.spec.ts                  # Playwright specs
+scripts/generate-android-assets.py # icon + splash generator
+android/                          # Capacitor Android project
 ```
 
 ### How a turn flows
@@ -194,7 +195,7 @@ android/                               # Capacitor Android project
 
 Regenerating deliberately keeps the previous answer: consecutive assistant
 messages form a *variant group* (see `src/lib/variants.ts`), the bubble shows a
-`ΓÇ╣ 2/3 ΓÇ║` control, and only the selected answer is rendered. The history builder
+`< 2/3 >` control, and only the selected answer is rendered. The history builder
 in the route collapses each group to its newest member before calling the model,
 so the model is never fed its own discarded drafts.
 
@@ -234,10 +235,10 @@ folder named after the caller's uid (`{user_id}/...`).
 
 ## Security notes
 
-- **RLS is on for every table** ΓÇö the anon key alone can never read another user's data.
+- **RLS is on for every table** -- the anon key alone can never read another user's data.
 - **`SUPABASE_SERVICE_ROLE_KEY` is server-only.** It is never sent to the browser.
 - **`run_code` is opt-in** (`ENABLE_CODE_EXECUTION=1`) and runs in the app's own
-  process with a 5-second timeout. It is **not** a security boundary ΓÇö for
+  process with a 5-second timeout. It is **not** a security boundary -- for
   untrusted multi-tenant use, move it to an isolated runner (e.g. a container or
   a sandboxed edge function).
 - **Uploads** are capped at 10 MB and restricted to an allow-list of MIME types.
@@ -246,10 +247,10 @@ folder named after the caller's uid (`{user_id}/...`).
 
 ## Deployment
 
-The app is a standard Next.js deployment ΓÇö Vercel, Fly.io, Docker, or any Node host.
+The app is a standard Next.js deployment -- Vercel, Fly.io, Docker, or any Node host.
 
 1. Set every variable from `.env.example` in your host's environment settings.
-2. Add your production URL to Supabase **Authentication ΓåÆ URL Configuration**
+2. Add your production URL to Supabase **Authentication > URL Configuration**
    (Site URL and redirect URLs, including `/auth/callback`).
 3. Deploy. `npm run build` is the build command; `npm run start` serves it.
 
@@ -262,16 +263,16 @@ targeting `main`, and on every push to `main`:
 
 **`verify` job**
 
-1. `npm ci` ΓÇö reproducible install from the committed lockfile, with npm caching
-2. `npm run typecheck` ΓÇö `tsc --noEmit`, must be clean
-3. `npm run lint` ΓÇö advisory (non-blocking)
-4. `npm test` ΓÇö the vitest suite, must pass
-5. `npm run build` ΓÇö the production build must succeed
+1. `npm ci` -- reproducible install from the committed lockfile, with npm caching
+2. `npm run typecheck` -- `tsc --noEmit`, must be clean
+3. `npm run lint` -- advisory (non-blocking)
+4. `npm test` -- the vitest suite, must pass
+5. `npm run build` -- the production build must succeed
 
 **`e2e` job**
 
 1. `npm ci` and `npx playwright install --with-deps chromium`
-2. `npm run test:e2e` ΓÇö builds and boots the app via the `webServer` block in
+2. `npm run test:e2e` -- builds and boots the app via the `webServer` block in
    `playwright.config.ts`, then runs the specs
 3. Uploads the Playwright report as an artifact on failure
 
@@ -285,14 +286,14 @@ full chat flow self-skips without `E2E_AUTH_*` credentials.
 
 Two layers, deliberately separated by what they can actually prove.
 
-### Unit tests ΓÇö `vitest`
+### Unit tests -- `vitest`
 
 ```bash
 npm test
 ```
 
-Covers pure logic only ΓÇö no DOM, no backend, no React runtime ΓÇö so the whole
-suite runs in ~15 s:
+Covers pure logic only -- no DOM, no backend, no React runtime -- so the whole
+suite runs in about 15 seconds:
 
 | File | Covers |
 |---|---|
@@ -304,7 +305,7 @@ suite runs in ~15 s:
 | `src/lib/mobile/app-url.test.ts` | Native detection, build-URL resolution |
 | `src/lib/mobile/preferences.test.ts` | URL normalisation, storage round-trips and failure modes |
 
-### End-to-end tests ΓÇö `playwright`
+### End-to-end tests -- `playwright`
 
 ```bash
 npx playwright install chromium   # first run only
@@ -312,7 +313,7 @@ npm run test:e2e
 ```
 
 [`e2e/chat.spec.ts`](e2e/chat.spec.ts) boots the real production server and checks
-routing, rendering and the auth guard. The full **send ΓåÆ stream ΓåÆ persist** flow
+routing, rendering and the auth guard. The full **send -> stream -> persist** flow
 needs a live Supabase project, so it self-skips unless credentials are supplied:
 
 ```bash
@@ -343,7 +344,7 @@ the shell is a WebView, app-store review applies the usual WebView guidelines.
 |---|---|
 | Node.js 20+ | to build the web bundle |
 | JDK 17 | `apt install openjdk-17-jdk-headless` |
-| Android SDK | Build-Tools 34.0.0, Platform 34 ΓÇö Android Studio, or `sdkmanager` |
+| Android SDK | Build-Tools 34.0.0, Platform 34 -- Android Studio, or `sdkmanager` |
 | `ANDROID_HOME` | must point at the SDK |
 
 ### Build the APK
@@ -370,7 +371,7 @@ The APK lands at
 
 The keystore and its passwords are **never committed**. `android/app/build.gradle`
 reads four environment variables, and when they are absent the release variant is
-built *unsigned* rather than failing ΓÇö so a fresh clone still builds.
+built *unsigned* rather than failing -- so a fresh clone still builds.
 
 | Variable | Purpose |
 |---|---|
@@ -403,7 +404,7 @@ $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose --print-certs \
 
 > **Keep the keystore safe.** Losing it means you can no longer publish updates to
 > an app already installed from that key. Back it up somewhere durable, and never
-> commit it ΓÇö `.gitignore` excludes `*.keystore`, `*.jks` and `android-secrets/`.
+> commit it -- `.gitignore` excludes `*.keystore`, `*.jks` and `android-secrets/`.
 
 ### Icons and splash screen
 
@@ -428,11 +429,11 @@ pop between the splash screen and the first rendered frame.
 The app resolves its backend URL in this order:
 
 1. A URL the user saved on the setup screen (persisted in `localStorage`).
-2. The URL baked in at build time (`APP_URL` ΓåÆ `NEXT_PUBLIC_BUILD_APP_URL`).
+2. The URL baked in at build time (`APP_URL` -> `NEXT_PUBLIC_BUILD_APP_URL`).
 3. `NEXT_PUBLIC_APP_URL`, then `PRODUCTION_URL` in `src/lib/mobile/app-url.ts`.
 
 If none is configured, `NativeShell` renders `AppUrlSetup` instead of a blank
-WebView ΓÇö a packaged wrapper with no URL is otherwise indistinguishable from a
+WebView -- a packaged wrapper with no URL is otherwise indistinguishable from a
 crash. To bake the address in permanently, set `APP_URL` before building.
 
 On the web, `NativeShell` is a pass-through and changes nothing.
@@ -444,7 +445,7 @@ On the web, `NativeShell` is a pass-through and changes nothing.
 adb install -r android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Or transfer the `.apk` to the device and open it ΓÇö Android will ask you to allow
+Or transfer the `.apk` to the device and open it -- Android will ask you to allow
 installation from that source.
 
 ### Automated builds
@@ -452,9 +453,9 @@ installation from that source.
 [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml)
 builds the signed APK:
 
-- **On a `v*` tag** ΓÇö builds, verifies the signature, and attaches the APK to a
+- **On a `v*` tag** -- builds, verifies the signature, and attaches the APK to a
   GitHub Release.
-- **Manual dispatch** ΓÇö builds and uploads the APK as a workflow artifact, with an
+- **Manual dispatch** -- builds and uploads the APK as a workflow artifact, with an
   optional `app_url` input.
 
 Add these repository secrets before the first run:
