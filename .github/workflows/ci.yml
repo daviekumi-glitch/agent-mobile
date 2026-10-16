@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
 
-# A newer commit on the same ref cancels the in-flight run — no point verifying
+# A newer commit on the same ref cancels the in-flight run - no point verifying
 # code that has already been superseded.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -25,7 +25,7 @@ jobs:
 
     # Build-time placeholders. Next.js inlines NEXT_PUBLIC_* at build time and
     # the Supabase clients read them at module load, so the build needs *values*
-    # — but they are never used to reach a real backend during a build.
+    # - but they are never used to reach a real backend during a build.
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
@@ -40,11 +40,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # Reproducible installs — package-lock.json is tracked.
-          cache: npm
+          # The lockfile is not committed yet (see the note on the install step).
 
+      # package-lock.json is NOT committed, so `cache: npm` (needs a lockfile to
+      # compute its key) and `npm ci` (requires one) would both fail. Use a plain
+      # `npm install`. Restore `cache: npm` + `npm ci` once the lockfile lands.
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
@@ -77,10 +79,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
+      # package-lock.json is NOT committed, so `cache: npm` (needs a lockfile to
+      # compute its key) and `npm ci` (requires one) would both fail. Use a plain
+      # `npm install`. Restore `cache: npm` + `npm ci` once the lockfile lands.
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
