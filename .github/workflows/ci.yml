@@ -40,13 +40,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # The lockfile is not committed yet (see the note on the install step).
+          # Dependency caching, enabled only once package-lock.json is in the
+          # checkout: setup-node fails outright when it is told to cache npm but
+          # has no lockfile to hash into a cache key.
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
 
-      # package-lock.json is NOT committed, so `cache: npm` (needs a lockfile to
-      # compute its key) and `npm ci` (requires one) would both fail. Use a plain
-      # `npm install`. Restore `cache: npm` + `npm ci` once the lockfile lands.
+      # `npm ci` is the correct install here - reproducible, and it fails loudly
+      # when the manifest and the lockfile disagree. It needs package-lock.json
+      # *in the checkout*. That is a known, documented gap: the lockfile is
+      # 429 KB and the commit path used to publish this project is text-only
+      # with a smaller per-file ceiling, so it could not be transferred.
+      #
+      # Until it lands, fall back to `npm install` and warn, rather than failing
+      # the whole gate with an opaque npm error.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::warning::package-lock.json is not in the repository - falling back to 'npm install'."
+            echo "::warning::Commit the lockfile to enable 'npm ci' and lockfile-keyed caching."
+            npm install --no-audit --no-fund
+          fi
 
       - name: Typecheck
         run: npm run typecheck
@@ -79,12 +94,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
 
-      # package-lock.json is NOT committed, so `cache: npm` (needs a lockfile to
-      # compute its key) and `npm ci` (requires one) would both fail. Use a plain
-      # `npm install`. Restore `cache: npm` + `npm ci` once the lockfile lands.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::warning::package-lock.json is not in the repository - falling back to 'npm install'."
+            npm install --no-audit --no-fund
+          fi
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
