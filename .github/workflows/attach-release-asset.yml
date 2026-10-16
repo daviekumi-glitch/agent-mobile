@@ -11,6 +11,13 @@ name: Attach release asset
 #
 # It downloads from a public URL, so it works with an APK produced anywhere:
 # a local Gradle build, a Drive upload, or another workflow's artifact.
+#
+# NOTE on hosted links: a plain `drive.google.com/uc?id=...&export=download`
+# URL does NOT return the file for binaries that Drive decides to scan. It
+# answers HTTP 200 with a small "Virus scan warning" HTML page, so `curl -f`
+# succeeds and the failure only shows up later as an md5 mismatch. Use the
+# `drive.usercontent.google.com/download?...&confirm=t` form instead -- that
+# host serves the bytes directly.
 
 on:
   workflow_dispatch:
@@ -21,10 +28,10 @@ on:
         type: string
         default: "v0.1.0"
       asset_url:
-        description: "Public URL of the APK to download and attach"
+        description: "Direct download URL of the APK (must serve bytes, not an HTML page)"
         required: true
         type: string
-        default: "https://drive.google.com/uc?id=1F2mTgwS8JOfv7GSeCv5h8mzytOqLXIrf&export=download"
+        default: "https://drive.usercontent.google.com/download?id=1F2mTgwS8JOfv7GSeCv5h8mzytOqLXIrf&export=download&confirm=t"
       asset_name:
         description: "Filename to publish the asset under"
         required: true
@@ -56,8 +63,28 @@ jobs:
           ASSET_NAME: ${{ inputs.asset_name }}
         run: |
           set -euo pipefail
-          curl -fSL --retry 3 --retry-delay 2 -o "$ASSET_NAME" "$ASSET_URL"
+
+          # -f would not be enough here: an HTML interstitial is served with
+          # HTTP 200, so it passes. Capture the content type too and reject
+          # anything that is not the file itself.
+          curl -fSL --retry 3 --retry-delay 2 \
+            -H 'User-Agent: Mozilla/5.0 (agent-mobile release)' \
+            -D headers.txt \
+            -o "$ASSET_NAME" "$ASSET_URL"
+
+          ctype=$(grep -i '^content-type:' headers.txt | tail -1 | tr -d '\r' | cut -d' ' -f2-)
+          echo "content-type: ${ctype:-<absent>}"
+          echo "size        : $(stat -c '%s' "$ASSET_NAME") bytes"
           ls -l "$ASSET_NAME"
+
+          case "$ctype" in
+            *text/html*)
+              echo "::error::The URL returned HTML, not the APK."
+              echo "::error::Hosted links often interpose a consent/scan page."
+              echo "::error::Use a URL that serves the bytes directly."
+              exit 1
+              ;;
+          esac
 
       # Hosted download links sometimes answer with a login or consent HTML
       # page instead of the file. Checking the md5 and the zip structure
