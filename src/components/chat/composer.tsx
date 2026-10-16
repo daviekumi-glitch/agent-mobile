@@ -5,18 +5,40 @@ import { ArrowUp, Loader2, Paperclip, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/chat/model-picker";
 import { useChatStore } from "@/lib/store/chat-store";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, estimateTokens, formatBytes } from "@/lib/utils";
 import type { Attachment } from "@/lib/types";
 
 const MAX_ROWS = 8;
+/** Soft warning threshold — the composer nudges, it never blocks. */
+const TOKEN_WARN_AT = 6000;
+
+const ACCEPT = [
+  "image/*",
+  ".txt",
+  ".md",
+  ".csv",
+  ".json",
+  ".pdf",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".sql",
+  ".yml",
+  ".yaml",
+  ".toml",
+].join(",");
 
 export function Composer() {
   const { sendMessage, isStreaming, stop, model, setModel, error, setError } = useChatStore();
   const [value, setValue] = React.useState("");
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
   const [uploading, setUploading] = React.useState(false);
+  const [dragging, setDragging] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const dragDepth = React.useRef(0);
 
   // Auto-grow the textarea.
   React.useEffect(() => {
@@ -35,7 +57,7 @@ export function Composer() {
     setValue("");
     setAttachments([]);
     setError(null);
-    void sendMessage(text || "(see attached files)", attachments);
+    void sendMessage(text || "(see attached files)", { attachments });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -45,32 +67,85 @@ export function Composer() {
     }
   };
 
-  const uploadFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    try {
-      for (const file of Array.from(files).slice(0, 5)) {
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch("/api/upload", { method: "POST", body: form });
-        if (!res.ok) {
-          const detail = await res.json().catch(() => null);
-          setError(detail?.error ?? `Could not upload ${file.name}`);
-          continue;
+  /** Upload a batch of files, appending each successful one. */
+  const uploadFiles = React.useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      setUploading(true);
+      try {
+        for (const file of files.slice(0, 5)) {
+          const form = new FormData();
+          form.append("file", file);
+          const res = await fetch("/api/upload", { method: "POST", body: form });
+          if (!res.ok) {
+            const detail = await res.json().catch(() => null);
+            setError(detail?.error ?? `Could not upload ${file.name}`);
+            continue;
+          }
+          const json = (await res.json()) as { attachment: Attachment };
+          setAttachments((prev) => [...prev, json.attachment]);
         }
-        const json = (await res.json()) as { attachment: Attachment };
-        setAttachments((prev) => [...prev, json.attachment]);
+      } finally {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    },
+    [setError],
+  );
+
+  // --- Drag and drop -------------------------------------------------------
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+  };
+
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length > 0) void uploadFiles(files);
+  };
+
+  // --- Paste an image straight into the composer ---------------------------
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (files.length === 0) return;
+    e.preventDefault();
+    void uploadFiles(files);
   };
 
   const canSend = (value.trim().length > 0 || attachments.length > 0) && !uploading;
+  const approxTokens = estimateTokens(value);
+  const tokenWarning = approxTokens >= TOKEN_WARN_AT;
 
   return (
-    <div className="border-t border-border bg-background/80 px-4 pb-3 pt-3 backdrop-blur sm:px-6 pb-safe">
+    <div
+      className="relative border-t border-border bg-background/80 px-4 pb-3 pt-3 backdrop-blur sm:px-6 pb-safe"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand/50 bg-brand/5 backdrop-blur-sm">
+          <p className="text-xs font-medium text-brand">Drop files to attach</p>
+        </div>
+      )}
+
       <div className="mx-auto w-full max-w-3xl">
         {error && (
           <div className="mb-2 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/8 px-3 py-2">
@@ -118,8 +193,8 @@ export function Composer() {
             type="file"
             multiple
             hidden
-            accept="image/*,.txt,.md,.csv,.json,.pdf,.ts,.tsx,.js,.jsx,.py,.sql,.yml,.yaml,.toml"
-            onChange={(e) => void uploadFiles(e.target.files)}
+            accept={ACCEPT}
+            onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []))}
           />
 
           <Button
@@ -129,6 +204,7 @@ export function Composer() {
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             aria-label="Attach files"
+            title="Attach files"
           >
             {uploading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
           </Button>
@@ -138,9 +214,11 @@ export function Composer() {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             rows={1}
             placeholder="Message Agent Mobile…"
             className="scrollbar-thin max-h-48 min-h-9 flex-1 resize-none bg-transparent py-2 text-[0.9375rem] leading-6 outline-none placeholder:text-muted-foreground"
+            aria-label="Message"
           />
 
           {isStreaming ? (
@@ -150,6 +228,7 @@ export function Composer() {
               className="mb-0.5 shrink-0 rounded-xl"
               onClick={stop}
               aria-label="Stop generating"
+              title="Stop generating"
             >
               <Square className="size-3.5 fill-current" />
             </Button>
@@ -161,6 +240,7 @@ export function Composer() {
               onClick={submit}
               disabled={!canSend}
               aria-label="Send message"
+              title="Send message"
             >
               <ArrowUp className="size-4" />
             </Button>
@@ -169,9 +249,26 @@ export function Composer() {
 
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <ModelPicker value={model} onChange={setModel} />
-          <p className="hidden text-2xs text-muted-foreground sm:block">
-            Enter to send · Shift+Enter for a new line
-          </p>
+          <div className="flex items-center gap-2">
+            {value.length > 0 && (
+              <span
+                className={cn(
+                  "text-2xs tabular-nums",
+                  tokenWarning ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
+                )}
+                title={
+                  tokenWarning
+                    ? "This prompt is very long — the model may truncate the context."
+                    : "Rough token estimate"
+                }
+              >
+                ≈{approxTokens.toLocaleString()} tokens
+              </span>
+            )}
+            <p className="hidden text-2xs text-muted-foreground sm:block">
+              Enter to send · Shift+Enter for a new line
+            </p>
+          </div>
         </div>
       </div>
     </div>

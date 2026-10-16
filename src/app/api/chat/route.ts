@@ -5,14 +5,35 @@ import { getLLMClient, DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, isKnownModel } from
 import { availableToolNames, toOpenAITools } from "@/lib/tools/registry";
 import { executeTool } from "@/lib/tools/executor";
 import { deriveTitle } from "@/lib/utils";
-import type { Attachment, ChatRequestBody, ChatStreamEvent, ToolCallStatus } from "@/lib/types";
+import type {
+  Attachment,
+  ChatMode,
+  ChatRequestBody,
+  ChatStreamEvent,
+  ToolCallStatus,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const MAX_TOOL_ITERATIONS = 5;
-const HISTORY_LIMIT = 30;
+/**
+ * How many prior messages to replay into the model.
+ *
+ * The query takes the *newest* N rows and reverses them, so a long thread
+ * always keeps its most recent context instead of the first N messages ever
+ * sent (which is what a naive ascending `limit` returns).
+ */
+const HISTORY_LIMIT = 60;
+
+interface HistoryRow {
+  id: string;
+  role: string;
+  content: string;
+  attachments: Attachment[] | null;
+  created_at: string;
+}
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -31,13 +52,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const userText = (body.message ?? "").trim();
-  if (!userText) {
+  const mode: ChatMode =
+    body.mode === "regenerate" || body.mode === "edit" ? body.mode : "send";
+
+  let userText = (body.message ?? "").trim();
+  if (mode !== "regenerate" && !userText) {
     return NextResponse.json({ error: "`message` is required" }, { status: 400 });
   }
 
   const model = isKnownModel(body.model) ? body.model : DEFAULT_MODEL;
-  const attachments: Attachment[] = Array.isArray(body.attachments) ? body.attachments : [];
+  let attachments: Attachment[] = Array.isArray(body.attachments) ? body.attachments : [];
   const systemPrompt = body.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
 
   // --- Resolve the conversation -------------------------------------------
@@ -57,6 +81,12 @@ export async function POST(request: NextRequest) {
     }
     title = existing.title;
   } else {
+    if (mode !== "send") {
+      return NextResponse.json(
+        { error: "`conversationId` is required for this mode" },
+        { status: 400 },
+      );
+    }
     const { data: created, error } = await supabase
       .from("conversations")
       .insert({ user_id: user.id, title, model })
@@ -72,24 +102,99 @@ export async function POST(request: NextRequest) {
     conversationId = created.id;
   }
 
-  // --- Persist the user message -------------------------------------------
-  const { error: userMsgError } = await supabase.from("messages").insert({
-    conversation_id: conversationId,
-    user_id: user.id,
-    role: "user",
-    content: userText,
-    attachments,
-  });
+  const convId = conversationId as string;
 
-  if (userMsgError) {
-    return NextResponse.json({ error: userMsgError.message }, { status: 500 });
+  // --- Mode-specific preparation ------------------------------------------
+  if (mode === "regenerate") {
+    // Reuse the last user turn verbatim, and drop the reply we are replacing
+    // so regenerating replaces rather than appends.
+    const { data: lastUser } = await supabase
+      .from("messages")
+      .select("id, content, attachments, created_at")
+      .eq("conversation_id", convId)
+      .eq("user_id", user.id)
+      .eq("role", "user")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!lastUser) {
+      return NextResponse.json({ error: "Nothing to regenerate" }, { status: 400 });
+    }
+
+    userText = lastUser.content as string;
+    if ((lastUser.attachments as Attachment[] | null)?.length) {
+      attachments = lastUser.attachments as Attachment[];
+    }
+
+    await supabase
+      .from("messages")
+      .delete()
+      .eq("conversation_id", convId)
+      .eq("user_id", user.id)
+      .in("role", ["assistant", "tool"])
+      .gt("created_at", lastUser.created_at as string);
+  }
+
+  if (mode === "edit") {
+    if (!body.targetMessageId) {
+      return NextResponse.json(
+        { error: "`targetMessageId` is required when editing" },
+        { status: 400 },
+      );
+    }
+
+    const { data: target } = await supabase
+      .from("messages")
+      .select("id, role, created_at")
+      .eq("id", body.targetMessageId)
+      .eq("conversation_id", convId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!target) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 });
+    }
+    if (target.role !== "user") {
+      return NextResponse.json({ error: "Only user messages can be edited" }, { status: 400 });
+    }
+
+    await supabase
+      .from("messages")
+      .update({ content: userText, attachments })
+      .eq("id", target.id)
+      .eq("user_id", user.id);
+
+    // Everything after an edited message is invalidated, so the model answers
+    // the corrected prompt instead of continuing the old branch.
+    await supabase
+      .from("messages")
+      .delete()
+      .eq("conversation_id", convId)
+      .eq("user_id", user.id)
+      .gt("created_at", target.created_at as string);
+  }
+
+  // --- Persist the user message (send mode only) --------------------------
+  if (mode === "send") {
+    const { error: userMsgError } = await supabase.from("messages").insert({
+      conversation_id: convId,
+      user_id: user.id,
+      role: "user",
+      content: userText,
+      attachments,
+    });
+
+    if (userMsgError) {
+      return NextResponse.json({ error: userMsgError.message }, { status: 500 });
+    }
   }
 
   // --- Create the assistant message row up-front so tool calls can attach --
   const { data: assistantRow, error: assistantError } = await supabase
     .from("messages")
     .insert({
-      conversation_id: conversationId,
+      conversation_id: convId,
       user_id: user.id,
       role: "assistant",
       content: "",
@@ -106,27 +211,30 @@ export async function POST(request: NextRequest) {
   }
 
   const assistantMessageId = assistantRow.id;
-  const convId = conversationId as string;
 
   // --- Build the LLM message history --------------------------------------
-  const { data: history } = await supabase
+  // Newest-first + reverse keeps the most recent context for long threads.
+  const { data: historyDesc } = await supabase
     .from("messages")
-    .select("role, content, attachments, created_at")
+    .select("id, role, content, attachments, created_at")
     .eq("conversation_id", convId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
+
+  const history = ((historyDesc ?? []) as HistoryRow[]).slice().reverse();
 
   const llmMessages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
   ];
 
-  for (const row of history ?? []) {
+  for (const row of history) {
     if (row.role === "system") continue;
-    // Skip the empty assistant placeholder we just created.
-    if (row.role === "assistant" && !row.content) continue;
+    // Skip the assistant placeholder we just created, and any previously
+    // interrupted assistant turn that never produced text.
+    if (row.role === "assistant" && (!row.content || row.id === assistantMessageId)) continue;
 
-    let content = row.content as string;
-    const rowAttachments = (row.attachments ?? []) as Attachment[];
+    let content = row.content;
+    const rowAttachments = row.attachments ?? [];
     if (row.role === "user" && rowAttachments.length > 0) {
       const list = rowAttachments.map((a) => `${a.name} (${a.mime})`).join(", ");
       content += `\n\n[Attached files: ${list}. Use the read_file tool to read their contents.]`;
@@ -149,7 +257,6 @@ export async function POST(request: NextRequest) {
       };
 
       let fullText = "";
-      let aborted = false;
 
       try {
         send({ type: "conversation", conversationId: convId, title });
@@ -289,7 +396,7 @@ export async function POST(request: NextRequest) {
         send({ type: "message_end", messageId: assistantMessageId, content: fullText });
         send({ type: "done" });
       } catch (err) {
-        aborted = request.signal.aborted;
+        const aborted = request.signal.aborted;
         const message = aborted
           ? "Generation stopped."
           : err instanceof Error
@@ -301,6 +408,15 @@ export async function POST(request: NextRequest) {
           await supabase
             .from("messages")
             .update({ content: fullText })
+            .eq("id", assistantMessageId)
+            .eq("user_id", user.id)
+            .then(undefined, () => {});
+        } else {
+          // The turn produced nothing usable — remove the empty placeholder so
+          // a retry does not leave a blank assistant bubble in the thread.
+          await supabase
+            .from("messages")
+            .delete()
             .eq("id", assistantMessageId)
             .eq("user_id", user.id)
             .then(undefined, () => {});

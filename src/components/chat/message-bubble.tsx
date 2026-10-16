@@ -1,12 +1,26 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  Check,
+  Copy,
+  MoreHorizontal,
+  Pencil,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Markdown } from "@/components/chat/markdown";
 import { ToolCallCard } from "@/components/chat/tool-call-card";
 import { Button } from "@/components/ui/button";
-import { cn, initials } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn, formatClock, formatFullTime, initials } from "@/lib/utils";
 import type { Message } from "@/lib/types";
 
 function CopyMessageButton({ content }: { content: string }) {
@@ -15,14 +29,15 @@ function CopyMessageButton({ content }: { content: string }) {
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label="Copy message"
+      aria-label={copied ? "Copied" : "Copy message"}
+      title="Copy message"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(content);
           setCopied(true);
           window.setTimeout(() => setCopied(false), 1600);
         } catch {
-          /* ignore */
+          /* clipboard unavailable */
         }
       }}
     >
@@ -31,19 +46,90 @@ function CopyMessageButton({ content }: { content: string }) {
   );
 }
 
+/** Inline editor shown in place of a user bubble while rewriting a prompt. */
+function InlineEditor({
+  initialValue,
+  onCancel,
+  onSave,
+}: {
+  initialValue: string;
+  onCancel: () => void;
+  onSave: (value: string) => void;
+}) {
+  const [value, setValue] = React.useState(initialValue);
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+  }, []);
+
+  return (
+    <div className="w-full rounded-2xl border border-brand/40 bg-card p-2.5 shadow-sm">
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          const el = e.target;
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            if (value.trim()) onSave(value);
+          }
+        }}
+        rows={2}
+        className="scrollbar-thin w-full resize-none bg-transparent px-1 py-1 text-[0.9375rem] leading-6 outline-none"
+        aria-label="Edit message"
+      />
+      <div className="mt-1.5 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="brand" size="sm" disabled={!value.trim()} onClick={() => onSave(value)}>
+          Update
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function MessageBubble({
   message,
   userName,
   isLast,
+  isStreaming,
   onRegenerate,
+  onEdit,
+  onDelete,
 }: {
   message: Message;
   userName?: string | null;
   isLast?: boolean;
+  isStreaming?: boolean;
   onRegenerate?: () => void;
+  onEdit?: (messageId: string, text: string) => void;
+  onDelete?: (messageId: string) => void;
 }) {
+  const [editing, setEditing] = React.useState(false);
   const isUser = message.role === "user";
-  const isStreamingEmpty = !isUser && message.content === "" && (message.tool_calls?.length ?? 0) === 0;
+  const isStreamingEmpty =
+    !isUser && message.content === "" && (message.tool_calls?.length ?? 0) === 0;
+
+  // A streaming placeholder has no stable identity yet, so hide destructive
+  // actions until the turn is persisted.
+  const canAct = !isStreamingEmpty && !message.id.startsWith("assistant_");
 
   if (isUser) {
     return (
@@ -56,18 +142,67 @@ export function MessageBubble({
                   key={a.id}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-2xs text-muted-foreground"
                 >
-                  {a.mime.startsWith("image/") ? "🖼" : "📄"} {a.name}
+                  {a.mime.startsWith("image/") ? "\ud83d\uddbc" : "\ud83d\udcc4"} {a.name}
                 </span>
               ))}
             </div>
           )}
-          <div className="rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[0.9375rem] leading-7 text-primary-foreground shadow-sm">
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
-          </div>
-          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <CopyMessageButton content={message.content} />
-          </div>
+
+          {editing ? (
+            <InlineEditor
+              initialValue={message.content}
+              onCancel={() => setEditing(false)}
+              onSave={(value) => {
+                setEditing(false);
+                onEdit?.(message.id, value);
+              }}
+            />
+          ) : (
+            <div className="rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[0.9375rem] leading-7 text-primary-foreground shadow-sm">
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            </div>
+          )}
+
+          {!editing && (
+            <div
+              className={cn(
+                "flex items-center gap-0.5 transition-opacity",
+                isLast ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+              )}
+            >
+              <span
+                className="mr-1 text-2xs text-muted-foreground tabular-nums"
+                title={formatFullTime(message.created_at)}
+              >
+                {formatClock(message.created_at)}
+              </span>
+              <CopyMessageButton content={message.content} />
+              {onEdit && isLast && !isStreaming && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Edit message"
+                  title="Edit and resend"
+                  onClick={() => setEditing(true)}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+              )}
+              {onDelete && isLast && !isStreaming && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Delete message"
+                  title="Delete message"
+                  onClick={() => onDelete(message.id)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
+
         <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-2xs font-semibold text-secondary-foreground">
           {initials(userName)}
         </div>
@@ -82,9 +217,7 @@ export function MessageBubble({
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
           <span className="text-xs font-semibold">Agent Mobile</span>
-          {message.model && (
-            <span className="text-2xs text-muted-foreground">{message.model}</span>
-          )}
+          {message.model && <span className="text-2xs text-muted-foreground">{message.model}</span>}
         </div>
 
         {message.tool_calls?.map((call) => (
@@ -92,7 +225,7 @@ export function MessageBubble({
         ))}
 
         {isStreamingEmpty ? (
-          <div className="flex items-center gap-1.5 py-1.5">
+          <div className="flex items-center gap-1.5 py-1.5" role="status" aria-label="Thinking">
             <span className="size-1.5 animate-caret-blink rounded-full bg-brand" />
             <span className="size-1.5 animate-caret-blink rounded-full bg-brand [animation-delay:0.2s]" />
             <span className="size-1.5 animate-caret-blink rounded-full bg-brand [animation-delay:0.4s]" />
@@ -105,21 +238,51 @@ export function MessageBubble({
           <div
             className={cn(
               "mt-1.5 flex items-center gap-0.5 transition-opacity",
-              isLast ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              isLast ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
             )}
           >
+            <span
+              className="mr-1 text-2xs text-muted-foreground tabular-nums"
+              title={formatFullTime(message.created_at)}
+            >
+              {formatClock(message.created_at)}
+            </span>
             <CopyMessageButton content={message.content} />
-            {onRegenerate && (
-              <Button variant="ghost" size="icon-sm" aria-label="Regenerate" onClick={onRegenerate}>
+            {canAct && onRegenerate && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Regenerate response"
+                title="Regenerate response"
+                onClick={onRegenerate}
+                disabled={isStreaming}
+              >
                 <RefreshCw className="size-3.5" />
               </Button>
             )}
-            <Button variant="ghost" size="icon-sm" aria-label="Good response">
-              <ThumbsUp className="size-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Bad response">
-              <ThumbsDown className="size-3.5" />
-            </Button>
+            {canAct && onDelete && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label="Message actions">
+                    <MoreHorizontal className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => onRegenerate?.()} disabled={isStreaming}>
+                    <RefreshCw />
+                    Regenerate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(message.id)}
+                  >
+                    <Trash2 />
+                    Delete message
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         )}
       </div>
