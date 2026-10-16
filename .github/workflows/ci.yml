@@ -19,9 +19,9 @@ permissions:
 
 jobs:
   verify:
-    name: Typecheck & build
+    name: Typecheck, lint, test & build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     # Build-time placeholders. Next.js inlines NEXT_PUBLIC_* at build time and
     # the Supabase clients read them at module load, so the build needs *values*
@@ -40,22 +40,63 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          # Reproducible installs — package-lock.json is tracked.
+          cache: npm
 
-      # `npm install` rather than `npm ci`: the existing repository did not
-      # track package-lock.json, so a strict `ci` install would fail on a cold
-      # checkout. Switch to `npm ci` (and add `cache: npm` above) once the
-      # lockfile is committed and authoritative.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
 
       - name: Lint
         run: npm run lint
-        # Lint is advisory: it should surface in the PR summary without blocking
-        # a merge on a stylistic finding. Promote it once the baseline is clean.
-        continue-on-error: true
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
+      OPENAI_API_KEY: sk-placeholder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # The webServer block in playwright.config.ts builds and boots the app.
+      # Specs needing real Supabase credentials self-skip and report as skipped.
+      - name: Run Playwright tests
+        run: npm run test:e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
