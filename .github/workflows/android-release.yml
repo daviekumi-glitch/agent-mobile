@@ -16,12 +16,6 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      app_url:
-        description: URL the packaged app should load
-        required: false
-        type: string
-        default: https://agent-mobile.vercel.app
 
 concurrency:
   group: android-${{ github.ref }}
@@ -102,13 +96,6 @@ jobs:
           chmod +x android/gradlew
           [ "$missing" -eq 0 ] || exit 1
 
-      - name: Resolve app URL
-        id: appurl
-        run: |
-          URL="${{ inputs.app_url || 'https://agent-mobile.vercel.app' }}"
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-          echo "Packaging against $URL"
-
       - name: Restore keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -120,22 +107,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/keys"
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keys/release.keystore"
 
-      - name: Build web app
-        env:
-          # Placeholders so the build never needs real credentials.
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
-          SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
-          OPENAI_API_KEY: sk-placeholder
+      - name: Build web app (static export, bundled into the APK)
+        run: npm run build
+
+      - name: Verify the web bundle exists
         run: |
-          # Next.js inlines NEXT_PUBLIC_* at build time, so the URL has to be
-          # present here - not just when Gradle runs.
-          export NEXT_PUBLIC_BUILD_APP_URL="${{ steps.appurl.outputs.url }}"
-          npm run build
+          test -f out/index.html || { echo "::error::out/index.html missing - static export failed"; exit 1; }
+          ls out | head -20
 
       - name: Sync Capacitor
-        env:
-          CAPACITOR_APP_URL: ${{ steps.appurl.outputs.url }}
         run: npx cap sync android
 
       # Bounded parallelism on purpose. A release build derives its worker count
@@ -149,7 +129,6 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          APP_URL: ${{ steps.appurl.outputs.url }}
         run: |
           chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon --no-parallel --max-workers=2 \
@@ -166,6 +145,13 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort | tail -1)"
           echo "Using $APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK"
+
+      - name: Verify the web app is bundled in the APK
+        working-directory: android
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          unzip -l "$APK" | grep -q "assets/public/index.html" || { echo "::error::index.html is not inside the APK"; exit 1; }
+          echo "Bundled web assets found in APK"
 
       - name: Stage APK
         run: |
@@ -194,4 +180,4 @@ jobs:
             **Install:** transfer the `.apk` to an Android device and open it, or run
             `adb install agent-mobile-${{ github.ref_name }}.apk`.
 
-            Packaged against `${{ steps.appurl.outputs.url }}`.
+            The web app is bundled inside the APK and talks directly to the Base44 backend.

@@ -23,15 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # Build-time placeholders. Next.js inlines NEXT_PUBLIC_* at build time and
-    # the Supabase clients read them at module load, so the build needs *values*
-    # - but they are never used to reach a real backend during a build.
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
-      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
-      OPENAI_API_KEY: sk-placeholder
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,12 +58,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
-      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
-      OPENAI_API_KEY: sk-placeholder
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,8 +74,11 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      # The webServer block in playwright.config.ts builds and boots the app.
-      # Specs needing real Supabase credentials self-skip and report as skipped.
+      - name: Build static export
+        run: npm run build
+
+      # The webServer block in playwright.config.ts serves out/. The signed-in
+      # spec self-skips (and reports as skipped) without E2E_ACCESS_TOKEN.
       - name: Run Playwright tests
         run: npm run test:e2e
 
