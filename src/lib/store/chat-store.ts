@@ -4,12 +4,13 @@ import { create } from "zustand";
 import type {
   Attachment,
   ChatMode,
-  ChatStreamEvent,
   Conversation,
   Message,
   ToolCallRecord,
 } from "@/lib/types";
 import { DEFAULT_MODEL } from "@/lib/ai/client";
+import * as data from "@/lib/base44/data";
+import { streamChat } from "@/lib/base44/stream";
 
 // ---------------------------------------------------------------------------
 // Chat store - the single source of truth for the client.
@@ -39,6 +40,8 @@ interface ChatState {
   /** Conversation-scoped map of variant group id -> chosen answer index. */
   selectedVariants: Record<string, number>;
   abortController: AbortController | null;
+  /** True while the realtime socket subscriptions are attached. */
+  realtimeLive: boolean;
 
   // --- actions
   setConversations: (c: Conversation[]) => void;
@@ -57,6 +60,8 @@ interface ChatState {
   enableTools: (names: string[]) => void;
   setVariant: (groupId: string, index: number) => void;
   setError: (e: string | null) => void;
+  /** Subscribe to live conversation/message changes. Returns a cleanup function. */
+  startRealtime: () => () => void;
   stop: () => void;
   reset: () => void;
 
@@ -108,6 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   settingsOpen: false,
   selectedVariants: {},
   abortController: null,
+  realtimeLive: false,
 
   setConversations: (conversations) => set({ conversations }),
 
@@ -171,13 +177,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
       selectedVariants: {},
     }),
 
+  // --- realtime ------------------------------------------------------------
+  startRealtime: () => {
+    // Debounce bursts (a streamed turn emits many updates) into one refresh.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refreshList = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void get().loadConversations(), 250);
+    };
+
+    const offConvos = data.subscribeConversations((type, convo, id) => {
+      if (type === "delete") {
+        get().removeConversation(id);
+        if (get().activeId === id) get().reset();
+        return;
+      }
+      if (convo.archived) {
+        get().removeConversation(id);
+        return;
+      }
+      get().upsertConversation(convo);
+      refreshList();
+    });
+
+    const offMessages = data.subscribeMessages((type, msg, id) => {
+      const { activeId, isStreaming } = get();
+      if (!activeId || msg.conversation_id !== activeId) return;
+      // This tab is producing the stream itself; reconcile once it finishes.
+      if (isStreaming) return;
+      if (type === "delete") {
+        set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
+        return;
+      }
+      if (msg.role !== "user" && msg.role !== "assistant") return;
+      if (msg.role === "assistant" && !isUsableAssistant(msg)) return;
+      set((s) => {
+        const exists = s.messages.some((m) => m.id === msg.id);
+        const messages = exists
+          ? s.messages.map((m) => (m.id === msg.id ? { ...m, ...msg, tool_calls: m.tool_calls } : m))
+          : [...s.messages, msg].sort((a, b) => a.created_at.localeCompare(b.created_at));
+        return { messages };
+      });
+    });
+
+    set({ realtimeLive: true });
+    return () => {
+      if (timer) clearTimeout(timer);
+      offConvos();
+      offMessages();
+      set({ realtimeLive: false });
+    };
+  },
+
   // --- data loading --------------------------------------------------------
   loadConversations: async () => {
     try {
-      const res = await fetch("/api/conversations");
-      if (!res.ok) return;
-      const json = (await res.json()) as { conversations: Conversation[] };
-      set({ conversations: json.conversations ?? [] });
+      set({ conversations: await data.listConversations() });
     } catch {
       /* offline - keep whatever we have */
     }
@@ -187,19 +242,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // A different thread means a different set of variant groups.
     set({ activeId: id, messages: [], error: null, selectedVariants: {} });
     try {
-      const res = await fetch(`/api/conversations/${id}`);
-      if (!res.ok) {
+      const json = await data.getConversation(id);
+      if (!json) {
         set({ error: "Could not load this conversation." });
         return;
       }
-      const json = (await res.json()) as {
-        conversation: Conversation;
-        messages: Message[];
-      };
       set({
-        messages: (json.messages ?? []).filter(
-          (m) => m.role !== "assistant" || isUsableAssistant(m),
-        ),
+        messages: json.messages.filter((m) => m.role !== "assistant" || isUsableAssistant(m)),
         model: json.conversation?.model ?? get().model,
       });
     } catch {
@@ -286,11 +335,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
 
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
+      for await (const event of streamChat(
+        {
           conversationId: activeId ?? undefined,
           message: trimmed,
           model,
@@ -298,35 +344,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           enabledTools,
           mode,
           targetMessageId: options.targetMessageId,
-        }),
-      });
-
-      if (!res.ok || !res.body) {
-        const detail = await res.json().catch(() => null);
-        throw new Error(detail?.error ?? `Request failed (HTTP ${res.status})`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let event: ChatStreamEvent;
-          try {
-            event = JSON.parse(line) as ChatStreamEvent;
-          } catch {
-            continue;
-          }
-
+        },
+        controller.signal,
+      )) {
           switch (event.type) {
             case "conversation": {
               set({ activeId: event.conversationId });
@@ -392,7 +412,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             case "done":
               break;
           }
-        }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -445,13 +464,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   /** Remove a single message from the thread (optimistic, then persisted). */
   deleteMessage: async (messageId) => {
     set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }));
-    await fetch(`/api/messages/${messageId}`, { method: "DELETE" }).catch(() => {});
+    await data.deleteMessage(messageId).catch(() => set({ error: "Could not delete the message." }));
   },
 
   // --- mutations -----------------------------------------------------------
   deleteConversation: async (id) => {
     get().removeConversation(id);
-    await fetch(`/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
+    await data.deleteConversation(id).catch(() => set({ error: "Could not delete the conversation." }));
     void get().loadConversations();
   },
 
@@ -459,11 +478,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({
       conversations: s.conversations.map((c) => (c.id === id ? { ...c, title } : c)),
     }));
-    await fetch(`/api/conversations/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    }).catch(() => {});
+    await data.updateConversation(id, { title }).catch(() => set({ error: "Could not rename the conversation." }));
   },
 
   /**
@@ -472,11 +487,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
    */
   archiveConversation: async (id) => {
     get().removeConversation(id);
-    await fetch(`/api/conversations/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ archived: true }),
-    }).catch(() => {});
+    await data.updateConversation(id, { archived: true }).catch(() => set({ error: "Could not archive the conversation." }));
     void get().loadConversations();
   },
 
@@ -487,10 +498,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({
       conversations: s.conversations.map((c) => (c.id === id ? { ...c, pinned } : c)),
     }));
-    await fetch(`/api/conversations/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pinned }),
-    }).catch(() => {});
+    await data.updateConversation(id, { pinned }).catch(() => set({ error: "Could not update the conversation." }));
   },
 }));

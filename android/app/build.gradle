@@ -21,14 +21,6 @@ def signingProperties = [
     keyPassword  : System.getenv('ANDROID_KEY_PASSWORD'),
 ]
 
-// The URL the packaged app loads. Baked into BuildConfig, surfaced to the web
-// bundle as NEXT_PUBLIC_BUILD_APP_URL, and readable from the WebView so the
-// in-app setup screen can tell whether this build was configured.
-//
-// `cap sync` also writes `server.url` into capacitor.config.json; this value
-// keeps the two in step and is what the TypeScript layer reads.
-def appUrl = System.getenv('APP_URL') ?: 'https://agent-mobile.vercel.app'
-
 def hasSigning = signingProperties.storeFile != null &&
         file(signingProperties.storeFile).exists() &&
         signingProperties.storePassword != null &&
@@ -51,8 +43,6 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
 
-        // Available to Java/Kotlin as BuildConfig.APP_URL.
-        buildConfigField "String", "APP_URL", "\"${appUrl}\""
     }
 
     buildFeatures {

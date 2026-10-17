@@ -1,5 +1,8 @@
+"use client";
+
+import * as React from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Code2,
@@ -15,10 +18,7 @@ import { Logo, Wordmark } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/server";
-
-// Reads the session cookie on every request — never prerender.
-export const dynamic = "force-dynamic";
+import { useAuth } from "@/components/auth/auth-provider";
 
 const FEATURES = [
   {
@@ -43,13 +43,13 @@ const FEATURES = [
   },
 ];
 
-export default async function LandingPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function LandingPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
 
-  if (user) redirect("/chat");
+  React.useEffect(() => {
+    if (!loading && user) router.replace("/chat");
+  }, [loading, user, router]);
 
   return (
     <div className="relative min-h-dvh overflow-hidden">
@@ -209,7 +209,7 @@ export default async function LandingPage() {
             <Zap className="size-3 text-brand" /> TypeScript + Tailwind
           </span>
           <span className="flex items-center gap-1.5">
-            <Zap className="size-3 text-brand" /> Supabase Auth + Postgres
+            <Zap className="size-3 text-brand" /> Base44 Auth + Realtime DB
           </span>
           <span className="flex items-center gap-1.5">
             <Moon className="size-3 text-brand" /> Dark mode

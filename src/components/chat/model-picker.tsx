@@ -55,7 +55,9 @@ export function ModelPicker({
               </Badge>
               {m.id === value && <Check className="size-3.5 shrink-0 text-brand" />}
             </span>
-            <span className="text-2xs leading-4 text-muted-foreground">{m.description}</span>
+            <span className="text-2xs leading-4 text-muted-foreground">
+              {m.provider} &middot; {m.description}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

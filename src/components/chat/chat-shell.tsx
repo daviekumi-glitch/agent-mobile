@@ -28,19 +28,19 @@ import {
 import { buildExport } from "@/lib/export";
 import { downloadText } from "@/lib/utils";
 import { useChatStore } from "@/lib/store/chat-store";
-import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { signOut as base44SignOut } from "@/lib/base44/auth";
 
 export function ChatShell({
   user,
 }: {
   user: { id: string; email?: string | null; name?: string | null; avatar?: string | null };
 }) {
-  const router = useRouter();
   const {
     messages,
     isStreaming,
     loadConversations,
+    startRealtime,
+    realtimeLive,
     setSidebarOpen,
     setToolsPanelOpen,
     toolsPanelOpen,
@@ -57,13 +57,13 @@ export function ChatShell({
 
   React.useEffect(() => {
     void loadConversations();
-  }, [loadConversations]);
+    // Live sync: chats created/renamed/pinned/deleted on any device show up here.
+    const stop = startRealtime();
+    return stop;
+  }, [loadConversations, startRealtime]);
 
   const signOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    base44SignOut("/login");
   };
 
   const exportConversation = (format: "markdown" | "json") => {

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { uploadAttachment } from "@/lib/base44/data";
 import { ArrowUp, Loader2, Paperclip, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/chat/model-picker";
@@ -74,16 +75,12 @@ export function Composer() {
       setUploading(true);
       try {
         for (const file of files.slice(0, 5)) {
-          const form = new FormData();
-          form.append("file", file);
-          const res = await fetch("/api/upload", { method: "POST", body: form });
-          if (!res.ok) {
-            const detail = await res.json().catch(() => null);
-            setError(detail?.error ?? `Could not upload ${file.name}`);
-            continue;
+          try {
+            const attachment = await uploadAttachment(file);
+            setAttachments((prev) => [...prev, attachment]);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : `Could not upload ${file.name}`);
           }
-          const json = (await res.json()) as { attachment: Attachment };
-          setAttachments((prev) => [...prev, json.attachment]);
         }
       } finally {
         setUploading(false);

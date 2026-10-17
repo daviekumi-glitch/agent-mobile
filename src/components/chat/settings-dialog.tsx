@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { getProfileSettings, saveProfileSettings } from "@/lib/base44/data";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,14 +46,10 @@ export function SettingsDialog({
 
     void (async () => {
       try {
-        const res = await fetch("/api/profile");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as {
-          profile: { default_model?: string; system_prompt?: string | null } | null;
-        };
+        const profile = await getProfileSettings();
         if (cancelled) return;
-        setDefaultModel(json.profile?.default_model ?? model);
-        setSystemPrompt(json.profile?.system_prompt ?? "");
+        setDefaultModel(profile.default_model ?? model);
+        setSystemPrompt(profile.system_prompt ?? "");
       } catch {
         if (!cancelled) toast.error("Could not load your settings.");
       } finally {
@@ -68,21 +65,11 @@ export function SettingsDialog({
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          default_model: defaultModel,
-          // An empty textarea means "no custom instruction", which the API
-          // stores as NULL so the app default applies again.
-          system_prompt: systemPrompt.trim() ? systemPrompt : null,
-        }),
+      await saveProfileSettings({
+        default_model: defaultModel,
+        // An empty textarea clears the custom instruction so the app default applies again.
+        system_prompt: systemPrompt.trim() ? systemPrompt : null,
       });
-
-      if (!res.ok) {
-        const detail = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(detail?.error ?? `HTTP ${res.status}`);
-      }
 
       // Applying the saved model immediately means the picker and the next
       // request agree without a reload.

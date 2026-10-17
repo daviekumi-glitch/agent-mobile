@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { SKILLS, TOOLS } from "@/lib/tools/registry";
 import {
   Calculator,
   Clock,
@@ -58,31 +59,30 @@ export function ToolsPanel() {
     toolsPanelOpen,
     setToolsPanelOpen,
   } = useChatStore();
-  const [tools, setTools] = React.useState<ToolMeta[]>([]);
-  const [skills, setSkills] = React.useState<SkillMeta[]>([]);
-  const [loaded, setLoaded] = React.useState(false);
+  // Static catalog: every tool is implemented by the Base44 backend function.
+  const tools: ToolMeta[] = React.useMemo(
+    () =>
+      TOOLS.map((t) => ({
+        name: t.name,
+        label: t.label,
+        description: t.description,
+        icon: t.icon,
+        skill: t.skill,
+        available: true,
+        requiresEnv: null,
+      })),
+    [],
+  );
+  const skills: SkillMeta[] = React.useMemo(
+    () => SKILLS.map((k) => ({ id: k.id, label: k.label, description: k.description, icon: k.icon, tools: k.tools })),
+    [],
+  );
+  const loaded = true;
 
+  // Enable every tool by default, once, so switching all off is not undone.
   React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/tools");
-        if (!res.ok) return;
-        const json = (await res.json()) as { tools: ToolMeta[]; skills: SkillMeta[] };
-        if (cancelled) return;
-        setTools(json.tools ?? []);
-        setSkills(json.skills ?? []);
-        // Default: enable every tool that is actually usable — but only once,
-        // so switching all tools off is not undone on the next panel open.
-        initEnabledTools((json.tools ?? []).filter((t) => t.available).map((t) => t.name));
-      } finally {
-        if (!cancelled) setLoaded(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [initEnabledTools]);
+    initEnabledTools(tools.filter((t) => t.available).map((t) => t.name));
+  }, [initEnabledTools, tools]);
 
   const activeCount = enabledTools.length;
 

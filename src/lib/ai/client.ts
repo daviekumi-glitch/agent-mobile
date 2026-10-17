@@ -1,26 +1,21 @@
-import OpenAI from "openai";
-
-/**
- * Shared OpenAI-compatible client.
- * Point OPENAI_BASE_URL at any compatible gateway (OpenRouter, Groq, vLLMΓÇª).
- */
-export function getLLMClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "OPENAI_API_KEY is not set. Add it to .env.local to enable chat completions.",
-    );
-  }
-  return new OpenAI({
-    apiKey,
-    baseURL: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-  });
-}
+// ---------------------------------------------------------------------------
+// Model catalog (client side).
+//
+// The browser never talks to an AI provider and never holds an API key. Chat
+// requests go to the Base44 `agentChat` function, which owns the NVIDIA and
+// OpenRouter keys as backend secrets and walks a fallback chain when a provider
+// is rate limited or down.
+//
+// IDs here MUST match the MODELS allow-list in base44/functions/agentChat.ts.
+// Only models that were verified to answer are listed.
+// ---------------------------------------------------------------------------
 
 export interface ModelOption {
   id: string;
   label: string;
   description: string;
+  /** Provider that serves the model first. */
+  provider: "NVIDIA" | "OpenRouter";
   /** Rough context window, shown in the picker. */
   context: string;
   /** Whether the model supports tool calling. */
@@ -29,60 +24,46 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
-    id: "gpt-4o-mini",
-    label: "GPT-4o mini",
-    description: "Fast and cheap ΓÇö great default for everyday chat.",
+    id: "nemotron-super",
+    label: "Nemotron 3 Super 120B",
+    description: "Strong general reasoning and tool use. The default.",
+    provider: "NVIDIA",
+    context: "262K",
+    tools: true,
+  },
+  {
+    id: "gpt-oss-20b",
+    label: "GPT-OSS 20B",
+    description: "Very fast open-weight model for everyday chat.",
+    provider: "NVIDIA",
     context: "128K",
     tools: true,
   },
   {
-    id: "gpt-4o",
-    label: "GPT-4o",
-    description: "Stronger reasoning and better tool use.",
-    context: "128K",
+    id: "nemotron-super-or",
+    label: "Nemotron 3 Super (OpenRouter)",
+    description: "Same model served through OpenRouter.",
+    provider: "OpenRouter",
+    context: "262K",
     tools: true,
   },
   {
-    id: "gpt-4.1",
-    label: "GPT-4.1",
-    description: "Long-context flagship for complex coding tasks.",
-    context: "1M",
-    tools: true,
-  },
-  {
-    id: "gpt-4.1-mini",
-    label: "GPT-4.1 mini",
-    description: "Balanced speed and quality with a large context.",
-    context: "1M",
-    tools: true,
-  },
-  {
-    id: "o4-mini",
-    label: "o4-mini",
-    description: "Reasoning model ΓÇö slower, better at hard problems.",
-    context: "200K",
+    id: "nemotron-omni-or",
+    label: "Nemotron Omni 30B (OpenRouter)",
+    description: "Compact reasoning model, quick responses.",
+    provider: "OpenRouter",
+    context: "256K",
     tools: true,
   },
 ];
 
 /**
- * The model a conversation falls back to. Exported so the client store can seed
- * its initial state from the same source of truth the server defaults to ΓÇö a
- * hard-coded copy in the store would silently drift from the model registry.
+ * The model a conversation falls back to. Exported so the client store seeds
+ * its initial state from the same source of truth as the picker.
  */
-export const DEFAULT_MODEL = "gpt-4o-mini";
+export const DEFAULT_MODEL = "nemotron-super";
 
-/** True when `id` names a model in the registry. Narrows the type for callers. */
+/** True when `id` names a model in the catalog. Narrows the type for callers. */
 export function isKnownModel(id: string | null | undefined): id is string {
   return MODELS.some((m) => m.id === id);
 }
-
-export const DEFAULT_SYSTEM_PROMPT = `You are Agent Mobile, a helpful, precise AI assistant.
-
-Guidelines:
-- Answer directly and lead with the result. Skip preamble like "Great question!".
-- Use GitHub-flavoured Markdown. Put code in fenced blocks with a language tag.
-- When a tool would give a better answer, call it instead of guessing. Never invent
-  tool output, URLs, or citations.
-- If a tool fails, say so plainly and continue with what you know.
-- Be concise by default; expand only when the question genuinely needs depth.`;

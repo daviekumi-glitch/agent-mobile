@@ -8,7 +8,6 @@
 
 export type ToolName =
   | "web_search"
-  | "run_code"
   | "generate_image"
   | "read_file"
   | "get_current_time"
@@ -27,11 +26,9 @@ export interface ToolDefinition {
   skill: SkillId;
   /** JSON Schema for the model's function-calling interface. */
   parameters: Record<string, unknown>;
-  /** True when the tool needs an env var that may be missing. */
-  requiresEnv?: string;
 }
 
-export type SkillId = "research" | "code" | "media" | "files" | "utility" | "math";
+export type SkillId = "research" | "media" | "files" | "utility" | "math";
 
 export interface SkillDefinition {
   id: SkillId;
@@ -55,13 +52,6 @@ export const SKILLS: SkillDefinition[] = [
     description: "Evaluate arithmetic precisely instead of estimating it.",
     icon: "Calculator",
     tools: ["calculator"],
-  },
-  {
-    id: "code",
-    label: "Code Execution",
-    description: "Run JavaScript in a sandbox to compute, parse or transform data.",
-    icon: "Terminal",
-    tools: ["run_code"],
   },
   {
     id: "media",
@@ -93,7 +83,6 @@ export const TOOLS: ToolDefinition[] = [
     description: "Search the web for current information and return ranked results.",
     icon: "Globe",
     skill: "research",
-    requiresEnv: "TAVILY_API_KEY",
     parameters: {
       type: "object",
       properties: {
@@ -115,7 +104,6 @@ export const TOOLS: ToolDefinition[] = [
     description: "Look up current weather conditions for a city.",
     icon: "CloudSun",
     skill: "research",
-    requiresEnv: "OPENWEATHER_API_KEY",
     parameters: {
       type: "object",
       properties: {
@@ -159,32 +147,11 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
   {
-    name: "run_code",
-    label: "Run code",
-    description: "Execute a JavaScript snippet in a sandbox and return its output.",
-    icon: "Terminal",
-    skill: "code",
-    requiresEnv: "ENABLE_CODE_EXECUTION",
-    parameters: {
-      type: "object",
-      properties: {
-        code: {
-          type: "string",
-          description:
-            "JavaScript to execute. Use `return` to produce a value, or console.log to emit output.",
-        },
-      },
-      required: ["code"],
-      additionalProperties: false,
-    },
-  },
-  {
     name: "generate_image",
     label: "Generate image",
     description: "Generate an image from a text prompt and return its URL.",
     icon: "Image",
     skill: "media",
-    requiresEnv: "OPENAI_API_KEY",
     parameters: {
       type: "object",
       properties: {
@@ -240,30 +207,12 @@ export const TOOL_MAP: Record<string, ToolDefinition> = Object.fromEntries(
   TOOLS.map((t) => [t.name, t]),
 );
 
-/** True when the tool's required env var is present in this deployment. */
+/** Every tool runs inside the Base44 `agentChat` function, so all are available. */
 export function isToolAvailable(tool: ToolDefinition): boolean {
-  if (!tool.requiresEnv) return true;
-  const value = process.env[tool.requiresEnv];
-  if (tool.requiresEnv === "ENABLE_CODE_EXECUTION") return value === "1";
-  return Boolean(value);
+  void tool;
+  return true;
 }
 
-/** Tools whose required env var is present in this deployment. */
 export function availableToolNames(): ToolName[] {
-  return TOOLS.filter(isToolAvailable).map((t) => t.name);
-}
-
-/** OpenAI-style function definitions for the enabled subset. */
-export function toOpenAITools(names: string[]) {
-  return names
-    .map((n) => TOOL_MAP[n])
-    .filter(Boolean)
-    .map((t) => ({
-      type: "function" as const,
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters,
-      },
-    }));
+  return TOOLS.map((t) => t.name);
 }
