@@ -102,7 +102,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 md:static md:z-auto md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:static md:z-auto md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -167,9 +167,9 @@ export function Sidebar() {
                     <li key={c.id}>
                       <div
                         className={cn(
-                          "group/item flex items-center gap-1 rounded-lg px-2.5 py-2 transition-colors",
+                          "group/item press flex items-center gap-1 rounded-xl px-2.5 py-2 transition-colors",
                           activeId === c.id
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                             : "hover:bg-sidebar-accent/60",
                         )}
                       >

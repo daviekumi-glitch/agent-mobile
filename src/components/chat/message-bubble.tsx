@@ -142,7 +142,7 @@ export function MessageBubble({
 
   if (isUser) {
     return (
-      <div className="group flex animate-fade-in justify-end gap-3 px-4 py-3 sm:px-6">
+      <div className="group flex animate-bubble-in justify-end gap-3 px-4 py-3 sm:px-6">
         <div className="flex max-w-[85%] flex-col items-end gap-1.5 sm:max-w-[75%]">
           {message.attachments?.length > 0 && (
             <div className="flex flex-wrap justify-end gap-1.5">
@@ -167,7 +167,7 @@ export function MessageBubble({
               }}
             />
           ) : (
-            <div className="rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[0.9375rem] leading-7 text-primary-foreground shadow-sm">
+            <div className="brand-gradient animate-bubble-in press rounded-[22px] rounded-br-lg px-4 py-2.5 text-[0.9375rem] leading-7 text-white shadow-lg shadow-brand/25">
               <p className="whitespace-pre-wrap break-words">{message.content}</p>
             </div>
           )}
@@ -212,7 +212,7 @@ export function MessageBubble({
           )}
         </div>
 
-        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-2xs font-semibold text-secondary-foreground">
+        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-brand/15 text-2xs font-semibold text-brand elev-1">
           {initials(userName)}
         </div>
       </div>
@@ -220,7 +220,7 @@ export function MessageBubble({
   }
 
   return (
-    <div className="group flex animate-fade-in gap-3 px-4 py-3 sm:px-6">
+    <div className="group flex animate-md-rise gap-3 px-4 py-3 sm:px-6">
       <Logo size={28} className="mt-0.5" />
 
       <div className="min-w-0 flex-1">
@@ -235,9 +235,9 @@ export function MessageBubble({
 
         {isStreamingEmpty ? (
           <div className="flex items-center gap-1.5 py-1.5" role="status" aria-label="Thinking">
-            <span className="size-1.5 animate-caret-blink rounded-full bg-brand" />
-            <span className="size-1.5 animate-caret-blink rounded-full bg-brand [animation-delay:0.2s]" />
-            <span className="size-1.5 animate-caret-blink rounded-full bg-brand [animation-delay:0.4s]" />
+            <span className="size-2 animate-dot-bounce rounded-full bg-brand" />
+            <span className="size-2 animate-dot-bounce rounded-full bg-brand [animation-delay:0.15s]" />
+            <span className="size-2 animate-dot-bounce rounded-full bg-brand [animation-delay:0.3s]" />
           </div>
         ) : (
           <Markdown content={message.content} />

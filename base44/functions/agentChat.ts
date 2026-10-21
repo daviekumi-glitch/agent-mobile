@@ -42,9 +42,14 @@ const MAX_TOOL_ITERATIONS = 4;
 const HISTORY_LIMIT = 30;
 const REQUEST_TIMEOUT_MS = 30000;
 const REQUEST_TIMEOUT_STREAM_MS = 20000;
+// First content token must arrive fast or we fail over; once tokens flow,
+// allow a longer gap between chunks.
+const STREAM_FIRST_MS = 8000;
 const STREAM_IDLE_MS = 12000;
 // Tool decisions are small (1200 tokens); fail over fast instead of hanging 30s.
-const TOOL_TIMEOUT_MS = 25000;
+const TOOL_TIMEOUT_MS = 15000;
+// Brief pause between fallback passes (rate limits need a moment, not seconds).
+const PASS_DELAY_MS = 600;
 
 const SYSTEM_PROMPT = `You are Agent Mobile, a helpful, precise AI assistant.
 - Answer directly and lead with the result. Skip preamble.
@@ -142,7 +147,7 @@ async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500
   // Three passes with growing backoff: free-tier 429s and momentary hangs
   // usually clear within seconds.
   for (let pass = 0; pass < 3; pass++) {
-  if (pass) await new Promise((r) => setTimeout(r, pass * 3000));
+  if (pass) await new Promise((r) => setTimeout(r, PASS_DELAY_MS * (pass + 1) / 2));
   for (const m of chain) {
     try {
       const res = await callOnce(m, messages, maxTokens, false, timeoutMs);
@@ -167,7 +172,7 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
   // Three passes; a later pass only happens if nothing was streamed yet,
   // so a retried answer can never duplicate text the user already received.
   for (let pass = 0; pass < 3; pass++) {
-  if (pass) await new Promise((r) => setTimeout(r, pass * 3000));
+  if (pass) await new Promise((r) => setTimeout(r, PASS_DELAY_MS * (pass + 1) / 2));
   for (const m of chain) {
     let produced = false;
     try {
@@ -176,8 +181,9 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
       const dec = new TextDecoder();
       let buf = '';
       let watchdog: ReturnType<typeof setTimeout> | undefined;
-      const bump = () => { clearTimeout(watchdog); watchdog = setTimeout(() => (res as any)._ctl?.abort(), STREAM_IDLE_MS); };
-      bump();
+      const arm = (ms: number) => { clearTimeout(watchdog); watchdog = setTimeout(() => (res as any)._ctl?.abort(), ms); };
+      const bump = () => arm(produced ? STREAM_IDLE_MS : STREAM_FIRST_MS);
+      arm(STREAM_FIRST_MS);
       try {
       yield { model: m };
       while (true) {

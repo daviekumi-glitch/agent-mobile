@@ -41,7 +41,7 @@ export function EmptyState() {
 
   return (
     <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-10 sm:px-6">
-      <div className="w-full max-w-2xl animate-fade-in">
+      <div className="w-full max-w-2xl animate-md-rise">
         <div className="flex flex-col items-center text-center">
           <Logo size={52} />
           <h1 className="mt-5 text-display">
@@ -54,14 +54,14 @@ export function EmptyState() {
         </div>
 
         <div className="mt-8 grid gap-2.5 sm:grid-cols-2">
-          {SUGGESTIONS.map((s) => (
+          {SUGGESTIONS.map((s, idx) => (
             <button
               key={s.title}
               type="button"
               onClick={() => void sendMessage(s.prompt)}
-              className="group flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-3.5 text-left transition-all hover:border-brand/40 hover:bg-card hover:shadow-sm"
+              className={`group press lift animate-md-pop ${idx === 1 ? "stagger-1" : idx === 2 ? "stagger-2" : idx === 3 ? "stagger-3" : idx === 4 ? "stagger-4" : "stagger-5"} flex items-start gap-3 rounded-3xl border border-border bg-card/70 p-3.5 text-left elev-1 hover:border-brand/40 hover:bg-card hover:elev-2`}
             >
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand transition-colors group-hover:bg-brand/15">
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-brand/12 text-brand transition-transform group-hover:scale-110">
                 <s.icon className="size-4" />
               </span>
               <span className="min-w-0">

@@ -83,8 +83,8 @@ export function ToolCallCard({ call }: { call: ToolCallRecord }) {
     <Collapsible open={open} onOpenChange={setOpen}>
       <div
         className={cn(
-          "my-2 overflow-hidden rounded-xl border bg-card/60 transition-colors",
-          failed ? "border-destructive/30" : "border-border",
+          "elev-1 my-2 overflow-hidden rounded-2xl border bg-card/70 transition-all",
+          failed ? "border-destructive/30" : "border-border/70",
         )}
       >
         <CollapsibleTrigger asChild>
@@ -94,7 +94,7 @@ export function ToolCallCard({ call }: { call: ToolCallRecord }) {
           >
             <span
               className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded-md",
+                "flex size-7 shrink-0 items-center justify-center rounded-xl",
                 failed
                   ? "bg-destructive/12 text-destructive"
                   : running

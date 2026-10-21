@@ -56,7 +56,7 @@ export default function LandingPage() {
         <Wordmark />
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button variant="brand" size="sm" asChild>
+          <Button variant="brand" size="sm" className="press rounded-full" asChild>
             <Link href="/chat">Start chatting</Link>
           </Button>
         </div>
@@ -70,19 +70,19 @@ export default function LandingPage() {
             No sign-up needed
           </Badge>
 
-          <h1 className="max-w-3xl text-balance text-4xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
+          <h1 className="animate-md-pop max-w-3xl text-balance text-4xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
             An AI assistant that can
             <span className="brand-text-gradient"> actually do things</span>
           </h1>
 
-          <p className="mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground">
+          <p className="animate-md-pop stagger-2 mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground">
             Agent Mobile is a ChatGPT-style workspace where the model searches the web, checks
             the weather, does exact math and reads your files — with every tool call visible
             in the conversation. Jump straight in: there is no account to create.
           </p>
 
           <div className="mt-8 flex flex-col gap-2.5 sm:flex-row">
-            <Button variant="brand" size="lg" asChild>
+            <Button variant="brand" size="lg" className="press glow-brand animate-md-pop stagger-3 rounded-full px-8" asChild>
               <Link href="/chat">
                 Open the chat
                 <ArrowRight className="size-4" />
@@ -98,7 +98,7 @@ export default function LandingPage() {
 
         {/* App preview */}
         <section className="mt-16">
-          <div className="overflow-hidden rounded-3xl border border-border bg-card/70 shadow-2xl backdrop-blur">
+          <div className="elev-3 overflow-hidden rounded-[28px] border border-border/70 bg-card/80 shadow-2xl backdrop-blur">
             <div className="flex items-center gap-1.5 border-b border-border px-4 py-3">
               <span className="size-2.5 rounded-full bg-red-400/70" />
               <span className="size-2.5 rounded-full bg-amber-400/70" />
@@ -128,7 +128,7 @@ export default function LandingPage() {
               {/* Fake thread */}
               <div className="space-y-4 p-5">
                 <div className="flex justify-end">
-                  <div className="max-w-[70%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-xs text-primary-foreground">
+                  <div className="brand-gradient max-w-[70%] rounded-[18px] rounded-br-md px-3.5 py-2 text-xs text-white shadow-lg shadow-brand/25">
                     What&apos;s the weather in Blantyre right now?
                   </div>
                 </div>
@@ -157,13 +157,13 @@ export default function LandingPage() {
 
         {/* Features */}
         <section className="mt-16 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map((f) => (
+          {FEATURES.map((f, idx) => (
             <div
               key={f.title}
-              className="rounded-2xl border border-border bg-card/60 p-4 transition-colors hover:border-brand/30"
+              className={`elev-1 lift animate-md-rise stagger-${idx + 1} rounded-3xl border border-border/70 bg-card/70 p-4 hover:border-brand/30 hover:elev-2`}
             >
-              <span className="flex size-9 items-center justify-center rounded-xl bg-brand/10 text-brand">
-                <f.icon className="size-4" />
+              <span className="flex size-10 items-center justify-center rounded-2xl bg-brand/12 text-brand">
+                <f.icon className="size-5" />
               </span>
               <h3 className="mt-3 text-sm font-semibold">{f.title}</h3>
               <p className="mt-1 text-2xs leading-5 text-muted-foreground">{f.body}</p>
@@ -177,7 +177,7 @@ export default function LandingPage() {
           <h2 className="text-balance text-2xl font-semibold sm:text-3xl">
             Ready when you are
           </h2>
-          <Button variant="brand" size="lg" asChild>
+          <Button variant="brand" size="lg" className="press glow-brand rounded-full px-8" asChild>
             <Link href="/chat">
               Start chatting
               <ArrowRight className="size-4" />

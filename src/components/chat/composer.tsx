@@ -131,7 +131,8 @@ export function Composer() {
 
   return (
     <div
-      className="relative border-t border-border bg-background/80 px-4 pb-3 pt-3 backdrop-blur sm:px-6 pb-safe"
+      className="relative bg-background/85 px-3 pb-3 pt-4 backdrop-blur-xl sm:px-6 pb-safe"
+      style={{ maskImage: "linear-gradient(to bottom, transparent, black 22px)", WebkitMaskImage: "linear-gradient(to bottom, transparent, black 22px)" }}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -163,7 +164,7 @@ export function Composer() {
             {attachments.map((a) => (
               <span
                 key={a.id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-2xs"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-2xs elev-1"
               >
                 <span className="max-w-[160px] truncate font-medium">{a.name}</span>
                 <span className="text-muted-foreground">{formatBytes(a.size)}</span>
@@ -182,7 +183,7 @@ export function Composer() {
 
         <div
           className={cn(
-            "flex items-end gap-2 rounded-2xl border border-border bg-card p-2 shadow-sm transition-shadow focus-within:border-brand/40 focus-within:shadow-md",
+            "elev-2 flex items-end gap-2 rounded-[26px] border border-border/70 bg-card p-2 transition-all duration-300 focus-within:border-brand/40 focus-within:elev-3 focus-within:shadow-lg focus-within:shadow-brand/10",
           )}
         >
           <input
@@ -222,7 +223,7 @@ export function Composer() {
             <Button
               variant="secondary"
               size="icon"
-              className="mb-0.5 shrink-0 rounded-xl"
+              className="press mb-0.5 size-10 shrink-0 rounded-full"
               onClick={stop}
               aria-label="Stop generating"
               title="Stop generating"
@@ -233,13 +234,13 @@ export function Composer() {
             <Button
               variant="brand"
               size="icon"
-              className="mb-0.5 shrink-0 rounded-xl"
+              className="press glow-brand mb-0.5 size-10 shrink-0 rounded-full transition-all disabled:shadow-none disabled:opacity-40"
               onClick={submit}
               disabled={!canSend}
               aria-label="Send message"
               title="Send message"
             >
-              <ArrowUp className="size-4" />
+              <ArrowUp className="size-5 transition-transform duration-200 group-enabled:group-hover:-translate-y-0.5" />
             </Button>
           )}
         </div>

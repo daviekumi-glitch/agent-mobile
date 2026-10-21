@@ -101,6 +101,24 @@ const config: Config = {
           "0%,70%,100%": { opacity: "1" },
           "20%,50%": { opacity: "0" },
         },
+        // Material-style spring entrances (Flutter's easeOutBack feel)
+        "md-pop": {
+          from: { opacity: "0", transform: "scale(0.92) translateY(10px)" },
+          "60%": { opacity: "1", transform: "scale(1.015) translateY(0)" },
+          to: { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
+        "md-rise": {
+          from: { opacity: "0", transform: "translateY(16px) scale(0.985)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "bubble-in": {
+          from: { opacity: "0", transform: "translateY(8px) scale(0.97)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "dot-bounce": {
+          "0%,80%,100%": { transform: "translateY(0)", opacity: "0.45" },
+          "40%": { transform: "translateY(-4px)", opacity: "1" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -109,6 +127,10 @@ const config: Config = {
         "slide-in-left": "slide-in-left 0.2s ease-out",
         shimmer: "shimmer 1.6s infinite",
         "caret-blink": "caret-blink 1.1s ease-out infinite",
+        "md-pop": "md-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "md-rise": "md-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "bubble-in": "bubble-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "dot-bounce": "dot-bounce 1.2s ease-in-out infinite",
       },
     },
   },

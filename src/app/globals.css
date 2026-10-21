@@ -365,3 +365,91 @@
 .hljs-emphasis {
   font-style: italic;
 }
+
+
+/* ==========================================================================
+   Material 3 "premium" layer — elevation, state layers, spring feedback
+   ========================================================================== */
+@layer utilities {
+  /* MD3 elevation levels (soft, layered umbra) */
+  .elev-1 {
+    box-shadow:
+      0 1px 2px hsl(240 12% 8% / 0.06),
+      0 1px 3px 1px hsl(240 12% 8% / 0.05);
+  }
+  .elev-2 {
+    box-shadow:
+      0 1px 2px hsl(240 12% 8% / 0.08),
+      0 2px 6px 2px hsl(240 12% 8% / 0.06);
+  }
+  .elev-3 {
+    box-shadow:
+      0 4px 8px 3px hsl(240 12% 8% / 0.07),
+      0 1px 3px hsl(240 12% 8% / 0.09);
+  }
+  .dark .elev-1 {
+    box-shadow:
+      0 1px 2px hsl(0 0% 0% / 0.4),
+      0 1px 3px 1px hsl(0 0% 0% / 0.3);
+  }
+  .dark .elev-2 {
+    box-shadow:
+      0 1px 2px hsl(0 0% 0% / 0.45),
+      0 2px 6px 2px hsl(0 0% 0% / 0.35);
+  }
+  .dark .elev-3 {
+    box-shadow:
+      0 4px 8px 3px hsl(0 0% 0% / 0.4),
+      0 1px 3px hsl(0 0% 0% / 0.45);
+  }
+
+  /* Flutter-like press feedback: everything tappable dips slightly. */
+  .press {
+    transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1),
+      box-shadow 0.18s cubic-bezier(0.2, 0, 0, 1),
+      background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
+      border-color 0.18s cubic-bezier(0.2, 0, 0, 1);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+  .lift {
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.22s cubic-bezier(0.2, 0, 0, 1);
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Brand glow for the send FAB and primary surfaces */
+  .glow-brand {
+    box-shadow: 0 2px 12px -2px hsl(var(--brand) / 0.45),
+      0 1px 3px hsl(240 12% 8% / 0.12);
+  }
+
+  /* Stagger helpers for spring entrances */
+  .stagger-1 { animation-delay: 0.04s; }
+  .stagger-2 { animation-delay: 0.10s; }
+  .stagger-3 { animation-delay: 0.16s; }
+  .stagger-4 { animation-delay: 0.22s; }
+  .stagger-5 { animation-delay: 0.28s; }
+  .stagger-6 { animation-delay: 0.34s; }
+
+  /* Rubber-band page scroll containment (Android feel) */
+  .scroll-contain {
+    overscroll-behavior: contain;
+  }
+}
+
+/* Respect the OS motion preference everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
