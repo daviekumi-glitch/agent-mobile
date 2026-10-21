@@ -1,6 +1,6 @@
 # Agent Mobile
 
-A ChatGPT-style AI chat app with skills and tools, built as a **static Next.js 15 app** (TypeScript, Tailwind) on top of the **Base44 backend**: authentication, database, realtime sync, file storage and the AI chat function all run on Base44. The same build ships as a website and is **bundled inside the Android APK** with Capacitor.
+A ChatGPT-style AI chat app with skills and tools, built as a **static Next.js 15 app** (TypeScript, Tailwind) on top of the **Base44 backend**: database, file storage and the AI chat function all run on Base44. The app is **guest-only**: no accounts, no sign-up; every visitor gets a device id and their chats are scoped to it, enforced server-side. The same build ships as a website and is **bundled inside the Android APK** with Capacitor.
 
 ![Chat on a phone](docs/screenshots/07-chat-tool-answer-mobile.png)
 
@@ -17,11 +17,11 @@ A ChatGPT-style AI chat app with skills and tools, built as a **static Next.js 1
 
 ```
 Browser / Android WebView (static files from out/)
-        |  @base44/sdk: auth, entities, realtime, storage
+        |  entities + functions via same-origin HTTP (service-role, device-scoped)
         v
 Base44 backend
-  - entities: Conversation, Message, ToolCall (row-level security: users see only their own data)
-  - function agentChat   auth, persistence, tool loop, streaming, provider fallback
+  - entities: Conversation, Message, ToolCall (each Conversation stores a device_id; every read/write is checked against the caller's X-Device-Id)
+  - function agentChat   persistence, tool loop, streaming, provider fallback
   - function agentTools  calculator, weather, web search, time, file reading
         |  HTTPS, API keys held as backend secrets
         v
@@ -71,8 +71,8 @@ base44/
     agentTools.ts      generated: tools function (calculator embedded from src/lib/tools)
     _src/              templates used by scripts/build-function.mjs
 src/
-  app/                 routes: /, /login, /register, /chat
-  components/          chat UI, auth, settings
+  app/                 routes: /, /chat (no auth pages)
+  components/          chat UI, settings
   lib/base44/          SDK client, auth, data layer, NDJSON stream reader
   lib/store/           Zustand chat store
   lib/tools/           tool registry and the calculator
@@ -97,8 +97,8 @@ The client POSTs to the `agentChat` function with `mode: send | regenerate | edi
 ## Testing
 
 - **Unit** (`npm test`): calculator, variants, commands, export, retry and utilities.
-- **Backend** (run against the deployed functions): auth and validation, memory, tools, regenerate and edit, every model, and the provider fallback chain.
-- **Browser** (`npm run test:e2e`): landing, login errors, auth guard, not-found page.
+- **Backend** (run against the deployed functions): validation, tools, regenerate and edit, every model, and the provider fallback chain.
+- **Browser** (`npm run test:e2e`): landing, guest chat flow, tools, responsive layouts (390/768/1280px), not-found page.
 
 ## Android
 
@@ -129,4 +129,8 @@ Download the `.apk` from the release (or workflow artifact), transfer it to an A
 
 ## Access control
 
-Registration and sign-in are handled by Base44. Whether new users can sign up freely or must be approved is a Base44 app setting (Settings, Authentication). Data access is enforced server-side by row-level security, so a user can only read or modify their own conversations.
+There are no accounts. On first visit the browser generates a random device id (localStorage `am_device_id`) and sends it as the `X-Device-Id` header on every request. Backend functions use service-role access but scope ALL queries to that device id, so one device can never read or modify another device's conversations (verified by integration tests). Settings and preferences are stored locally on the device.
+
+### Realtime sync
+
+The Base44 realtime websocket rejects connections from this app, so thread updates across tabs/devices use **refetch-on-focus**: when a conversation is open and the window regains focus or becomes visible, the client refetches that conversation and merges any new messages.
