@@ -19,13 +19,14 @@ type Provider = 'nvidia' | 'openrouter';
 interface ModelDef { id: string; provider: Provider; upstream: string; label: string }
 
 // Only models verified to answer with this key set. Order = fallback order.
+// Re-verified 2026-10-21: nemotron-3-super and the OpenRouter nemotron mirrors
+// now 404 or stall, so the chain leads with the models that answered reliably.
 const MODELS: ModelDef[] = [
-  { id: 'nemotron-super', provider: 'nvidia', upstream: 'nvidia/nemotron-3-super-120b-a12b', label: 'Nemotron 3 Super 120B' },
   { id: 'gpt-oss-20b', provider: 'nvidia', upstream: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B' },
-  { id: 'nemotron-super-or', provider: 'openrouter', upstream: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 3 Super (OpenRouter)' },
-  { id: 'nemotron-omni-or', provider: 'openrouter', upstream: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', label: 'Nemotron Omni 30B (OpenRouter)' },
+  { id: 'gemma-4-31b', provider: 'openrouter', upstream: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B' },
+  { id: 'gemma-4-26b', provider: 'openrouter', upstream: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 26B' },
 ];
-const DEFAULT_MODEL = 'nemotron-super';
+const DEFAULT_MODEL = 'gpt-oss-20b';
 
 const ENDPOINTS: Record<Provider, { url: string; key: () => string | undefined }> = {
   nvidia: { url: 'https://integrate.api.nvidia.com/v1/chat/completions', key: () => Deno.env.get('NVIDIA_API_KEY') },
@@ -35,6 +36,8 @@ const ENDPOINTS: Record<Provider, { url: string; key: () => string | undefined }
 const MAX_TOOL_ITERATIONS = 4;
 const HISTORY_LIMIT = 30;
 const REQUEST_TIMEOUT_MS = 45000;
+// Tool decisions are small (1200 tokens); fail over fast instead of hanging 45s.
+const TOOL_TIMEOUT_MS = 25000;
 
 const SYSTEM_PROMPT = `You are Agent Mobile, a helpful, precise AI assistant.
 - Answer directly and lead with the result. Skip preamble.
@@ -79,11 +82,11 @@ function fallbackChain(preferred: string): ModelDef[] {
   return [first, ...rest].filter((m) => !!ENDPOINTS[m.provider].key());
 }
 
-async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, stream: boolean): Promise<Response> {
+async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, stream: boolean, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   const key = ENDPOINTS[m.provider].key();
   if (!key) throw new RetryableError(`${m.provider} key not configured`);
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const res = await fetch(ENDPOINTS[m.provider].url, {
       method: 'POST',
@@ -112,13 +115,17 @@ async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, str
 }
 
 /** Non-streaming completion with fallback. Returns content only (never reasoning). */
-async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500): Promise<{ text: string; model: ModelDef }> {
+async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{ text: string; model: ModelDef }> {
   const chain = fallbackChain(preferred);
   if (!chain.length) throw new Error('No AI provider is configured on the server.');
   const errors: string[] = [];
+  // Three passes with growing backoff: free-tier 429s and momentary hangs
+  // usually clear within seconds.
+  for (let pass = 0; pass < 3; pass++) {
+  if (pass) await new Promise((r) => setTimeout(r, pass * 3000));
   for (const m of chain) {
     try {
-      const res = await callOnce(m, messages, maxTokens, false);
+      const res = await callOnce(m, messages, maxTokens, false, timeoutMs);
       const data = await res.json();
       const text = String(data?.choices?.[0]?.message?.content ?? '').trim();
       if (!text) { errors.push(`${m.label}: empty reply`); continue; }
@@ -128,6 +135,7 @@ async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500
       throw e;
     }
   }
+  }
   throw new Error(`All AI providers failed (${errors.join('; ')})`);
 }
 
@@ -136,6 +144,10 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
   const chain = fallbackChain(preferred);
   if (!chain.length) throw new Error('No AI provider is configured on the server.');
   const errors: string[] = [];
+  // Three passes; a later pass only happens if nothing was streamed yet,
+  // so a retried answer can never duplicate text the user already received.
+  for (let pass = 0; pass < 3; pass++) {
+  if (pass) await new Promise((r) => setTimeout(r, pass * 3000));
   for (const m of chain) {
     let produced = false;
     try {
@@ -168,6 +180,7 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
       if (e instanceof RetryableError) { errors.push(e.message); continue; }
       throw e;
     }
+  }
   }
   throw new Error(`All AI providers failed (${errors.join('; ')})`);
 }
@@ -300,6 +313,8 @@ Deno.serve(async (req) => {
         send({ type: 'message_start', messageId: assistant.id });
 
         const scratch: string[] = [];
+        // Same tool + same args twice means the model is looping; stop calling tools.
+        const called: string[] = [];
 
         // Phase 1: tool loop (decide whether a tool is needed).
         if (enabledTools.length) {
@@ -315,9 +330,12 @@ Decide the next step. Respond with ONLY a JSON object, no prose, no code fences:
 - If no tool is needed (or you have enough information): {"action":"final"}
 Only call a tool when it clearly helps (current facts, exact math, weather, time, attached files).` +
               (scratch.length ? `\n\nTool results so far:\n${scratch.join('\n')}` : '');
-            const { text } = await complete(model, [{ role: 'system', content: instruction }, ...chatHistory], 1200);
+            const { text } = await complete(model, [{ role: 'system', content: instruction }, ...chatHistory], 1200, TOOL_TIMEOUT_MS);
             const act = parseAction(text);
             if (act?.action === 'tool' && act.tool && enabledTools.includes(act.tool)) {
+              const signature = `${act.tool}:${JSON.stringify(act.args ?? {})}`;
+              if (called.includes(signature)) break; // duplicate call -> answer with what we have
+              called.push(signature);
               const callId = `call_${crypto.randomUUID()}`;
               const args = (act.args && typeof act.args === 'object' ? act.args : {}) as Json;
               send({ type: 'tool_call', id: callId, name: act.tool, arguments: args });

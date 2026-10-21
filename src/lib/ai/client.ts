@@ -24,35 +24,27 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
-    id: "nemotron-super",
-    label: "Nemotron 3 Super 120B",
-    description: "Strong general reasoning and tool use. The default.",
-    provider: "NVIDIA",
-    context: "262K",
-    tools: true,
-  },
-  {
     id: "gpt-oss-20b",
     label: "GPT-OSS 20B",
-    description: "Very fast open-weight model for everyday chat.",
+    description: "Fast, reliable default. Handles tools well.",
     provider: "NVIDIA",
     context: "128K",
     tools: true,
   },
   {
-    id: "nemotron-super-or",
-    label: "Nemotron 3 Super (OpenRouter)",
-    description: "Same model served through OpenRouter.",
+    id: "gemma-4-31b",
+    label: "Gemma 4 31B",
+    description: "Google's latest open model, large context.",
     provider: "OpenRouter",
     context: "262K",
     tools: true,
   },
   {
-    id: "nemotron-omni-or",
-    label: "Nemotron Omni 30B (OpenRouter)",
-    description: "Compact reasoning model, quick responses.",
+    id: "gemma-4-26b",
+    label: "Gemma 4 26B",
+    description: "Lighter Gemma variant, quick responses.",
     provider: "OpenRouter",
-    context: "256K",
+    context: "262K",
     tools: true,
   },
 ];
@@ -61,7 +53,7 @@ export const MODELS: ModelOption[] = [
  * The model a conversation falls back to. Exported so the client store seeds
  * its initial state from the same source of truth as the picker.
  */
-export const DEFAULT_MODEL = "nemotron-super";
+export const DEFAULT_MODEL = "gpt-oss-20b";
 
 /** True when `id` names a model in the catalog. Narrows the type for callers. */
 export function isKnownModel(id: string | null | undefined): id is string {
