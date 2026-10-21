@@ -366,7 +366,7 @@ Decide the next step. Respond with ONLY a JSON object, no prose, no code fences:
 - If no tool is needed (or you have enough information): {"action":"final"}
 Only call a tool when it clearly helps (current facts, exact math, weather, time, attached files).` +
               (scratch.length ? `\n\nTool results so far:\n${scratch.join('\n')}` : '');
-            const { text } = await complete(model, [{ role: 'system', content: instruction }, ...chatHistory], 96, TOOL_TIMEOUT_MS);
+            const { text } = await complete(model, [{ role: 'system', content: instruction }, ...chatHistory], 1200, TOOL_TIMEOUT_MS);
             const act = parseAction(text);
             if (act?.action === 'tool' && act.tool && enabledTools.includes(act.tool)) {
               const signature = `${act.tool}:${JSON.stringify(act.args ?? {})}`;
