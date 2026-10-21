@@ -60,7 +60,7 @@ interface ChatState {
   enableTools: (names: string[]) => void;
   setVariant: (groupId: string, index: number) => void;
   setError: (e: string | null) => void;
-  /** Subscribe to live conversation/message changes. Returns a cleanup function. */
+  /** Keep the app fresh: refetch data when the tab regains focus. Returns a cleanup function. */
   startRealtime: () => () => void;
   stop: () => void;
   reset: () => void;
@@ -177,54 +177,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
       selectedVariants: {},
     }),
 
-  // --- realtime ------------------------------------------------------------
+  // --- background sync -----------------------------------------------------
+  // The realtime websocket was rejected by the server for this app, so sync
+  // opportunistically instead: whenever the tab regains focus (or becomes
+  // visible again), refresh the sidebar and the active thread. This keeps the
+  // app correct across tabs and devices without sockets or polling costs.
   startRealtime: () => {
-    // Debounce bursts (a streamed turn emits many updates) into one refresh.
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const refreshList = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void get().loadConversations(), 250);
+    let syncing = false;
+    const refresh = () => {
+      const { isStreaming, activeId } = get();
+      if (isStreaming || syncing || document.visibilityState !== "visible") return;
+      syncing = true;
+      void get()
+        .loadConversations()
+        .finally(() => {
+          const id = get().activeId;
+          if (id && id === activeId) void get().loadConversation(id).catch(() => {});
+          syncing = false;
+        });
     };
-
-    const offConvos = data.subscribeConversations((type, convo, id) => {
-      if (type === "delete") {
-        get().removeConversation(id);
-        if (get().activeId === id) get().reset();
-        return;
-      }
-      if (convo.archived) {
-        get().removeConversation(id);
-        return;
-      }
-      get().upsertConversation(convo);
-      refreshList();
-    });
-
-    const offMessages = data.subscribeMessages((type, msg, id) => {
-      const { activeId, isStreaming } = get();
-      if (!activeId || msg.conversation_id !== activeId) return;
-      // This tab is producing the stream itself; reconcile once it finishes.
-      if (isStreaming) return;
-      if (type === "delete") {
-        set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
-        return;
-      }
-      if (msg.role !== "user" && msg.role !== "assistant") return;
-      if (msg.role === "assistant" && !isUsableAssistant(msg)) return;
-      set((s) => {
-        const exists = s.messages.some((m) => m.id === msg.id);
-        const messages = exists
-          ? s.messages.map((m) => (m.id === msg.id ? { ...m, ...msg, tool_calls: m.tool_calls } : m))
-          : [...s.messages, msg].sort((a, b) => a.created_at.localeCompare(b.created_at));
-        return { messages };
-      });
-    });
-
+    const onFocus = () => refresh();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     set({ realtimeLive: true });
     return () => {
-      if (timer) clearTimeout(timer);
-      offConvos();
-      offMessages();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
       set({ realtimeLive: false });
     };
   },

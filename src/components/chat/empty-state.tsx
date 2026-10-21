@@ -1,35 +1,42 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileText, Globe, Image as ImageIcon, Sparkles } from "lucide-react";
+import { CloudSun, Clock, Code2, FileText, Globe, Sparkles } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { useChatStore } from "@/lib/store/chat-store";
 
+// Suggestions map 1:1 to the tools the backend actually ships: web_search,
+// get_weather, calculator and read_file. Never advertise capabilities the app
+// does not have.
 const SUGGESTIONS = [
   {
     icon: Globe,
     title: "Research something current",
-    prompt: "Search the web for the latest Next.js 15 release notes and summarise what changed.",
+    prompt: "Search the web for today's top technology headlines and summarise the three most important.",
+  },
+  {
+    icon: CloudSun,
+    title: "Check the weather",
+    prompt: "What's the weather in Blantyre, Malawi right now?",
   },
   {
     icon: Code2,
-    title: "Write and run code",
-    prompt:
-      "Write a JavaScript function that finds the longest palindromic substring, then run it on 'babad' and 'cbbd'.",
+    title: "Do exact math",
+    prompt: "Calculate (1250 * 1.18) / 3 and show the exact result.",
   },
   {
-    icon: ImageIcon,
-    title: "Generate an image",
-    prompt: "Generate an image of a neon-lit cyberpunk city skyline at night, cinematic wide shot.",
+    icon: Clock,
+    title: "Work out the time",
+    prompt: "What time is it right now in Europe/London?",
   },
   {
     icon: FileText,
-    title: "Analyse a file",
-    prompt: "I'll attach a CSV — read it and give me a summary of the columns and any anomalies.",
+    title: "Read an attached file",
+    prompt: "Attach a text, code or CSV file and I'll summarise what's inside it.",
   },
 ];
 
-export function EmptyState({ userName }: { userName?: string | null }) {
+export function EmptyState() {
   const { sendMessage } = useChatStore();
 
   return (
@@ -38,12 +45,11 @@ export function EmptyState({ userName }: { userName?: string | null }) {
         <div className="flex flex-col items-center text-center">
           <Logo size={52} />
           <h1 className="mt-5 text-display">
-            {userName ? `Hi ${userName.split(" ")[0]}, ` : ""}
-            <span className="brand-text-gradient">what can I build for you?</span>
+            <span className="brand-text-gradient">what can I help with?</span>
           </h1>
           <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-            Agent Mobile can search the web, run code, generate images and read your files —
-            all inside the conversation.
+            Agent Mobile can search the web, check the weather, do exact math and
+            read attached files — with every tool call visible in the conversation.
           </p>
         </div>
 

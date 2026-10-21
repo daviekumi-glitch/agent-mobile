@@ -1,25 +1,24 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  CloudSun,
+  Clock,
   Code2,
   FileText,
   Globe,
-  Image as ImageIcon,
-  Lock,
-  Moon,
   Sparkles,
   Zap,
 } from "lucide-react";
-import { Logo, Wordmark } from "@/components/logo";
+import { Wordmark } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/components/auth/auth-provider";
 
+// Features map 1:1 to the tools the backend actually ships: web_search,
+// get_weather, calculator, get_current_time and read_file. Never advertise
+// capabilities the app does not have.
 const FEATURES = [
   {
     icon: Globe,
@@ -27,30 +26,23 @@ const FEATURES = [
     body: "Pull live results into the answer instead of relying on stale training data.",
   },
   {
-    icon: Code2,
-    title: "Code execution",
-    body: "Run JavaScript in a sandbox and see the real output, not a guess.",
+    icon: CloudSun,
+    title: "Live weather",
+    body: "Ask about the weather anywhere and get the current conditions in the reply.",
   },
   {
-    icon: ImageIcon,
-    title: "Image generation",
-    body: "Create images from a prompt and render them inline in the thread.",
+    icon: Code2,
+    title: "Exact math",
+    body: "A real calculator evaluates the expression, so numbers are never hallucinated.",
   },
   {
     icon: FileText,
     title: "File reading",
-    body: "Attach a CSV, markdown or source file and let the agent read it.",
+    body: "Attach a text, code or CSV file and the assistant reads it before answering.",
   },
 ];
 
 export default function LandingPage() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-
-  React.useEffect(() => {
-    if (!loading && user) router.replace("/chat");
-  }, [loading, user, router]);
-
   return (
     <div className="relative min-h-dvh overflow-hidden">
       {/* Ambient background */}
@@ -64,11 +56,8 @@ export default function LandingPage() {
         <Wordmark />
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/login">Sign in</Link>
-          </Button>
           <Button variant="brand" size="sm" asChild>
-            <Link href="/register">Get started</Link>
+            <Link href="/chat">Start chatting</Link>
           </Button>
         </div>
       </header>
@@ -78,7 +67,7 @@ export default function LandingPage() {
         <section className="flex flex-col items-center pt-10 text-center sm:pt-16">
           <Badge variant="brand" className="mb-5 gap-1.5 px-3 py-1">
             <Sparkles className="size-3" />
-            Skills &amp; tools built in
+            No sign-up needed
           </Badge>
 
           <h1 className="max-w-3xl text-balance text-4xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
@@ -87,26 +76,23 @@ export default function LandingPage() {
           </h1>
 
           <p className="mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground">
-            Agent Mobile is a ChatGPT-style workspace where the model searches the web, runs
-            code, generates images and reads your files — with every tool call visible in the
-            conversation.
+            Agent Mobile is a ChatGPT-style workspace where the model searches the web, checks
+            the weather, does exact math and reads your files — with every tool call visible
+            in the conversation. Jump straight in: there is no account to create.
           </p>
 
           <div className="mt-8 flex flex-col gap-2.5 sm:flex-row">
             <Button variant="brand" size="lg" asChild>
-              <Link href="/register">
-                Start chatting free
+              <Link href="/chat">
+                Open the chat
                 <ArrowRight className="size-4" />
               </Link>
-            </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link href="/login">I already have an account</Link>
             </Button>
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 text-2xs text-muted-foreground">
-            <Lock className="size-3" />
-            Your conversations are private — protected by row-level security.
+            <Clock className="size-3" />
+            Your conversations stay on this device — nothing to sign up for.
           </p>
         </section>
 
@@ -124,7 +110,6 @@ export default function LandingPage() {
               {/* Fake sidebar */}
               <div className="hidden flex-col gap-1.5 border-r border-border bg-sidebar p-3 sm:flex">
                 <div className="mb-1 flex items-center gap-2">
-                  <Logo size={22} />
                   <span className="text-2xs font-semibold">Agent Mobile</span>
                 </div>
                 {["Today", "Yesterday"].map((bucket) => (
@@ -144,38 +129,24 @@ export default function LandingPage() {
               <div className="space-y-4 p-5">
                 <div className="flex justify-end">
                   <div className="max-w-[70%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-xs text-primary-foreground">
-                    What&apos;s the latest in Next.js 15?
+                    What&apos;s the weather in Blantyre right now?
                   </div>
                 </div>
 
                 <div className="flex gap-2.5">
-                  <Logo size={22} />
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-[0.625rem]">
-                      <Globe className="size-3 text-brand" />
-                      <span className="font-medium">Web search</span>
-                      <span className="text-muted-foreground">next.js 15 release</span>
+                      <CloudSun className="size-3 text-brand" />
+                      <span className="font-medium">Weather</span>
+                      <span className="text-muted-foreground">Blantyre, Malawi</span>
                       <Badge variant="success" className="ml-1">
-                        412ms
+                        380ms
                       </Badge>
                     </div>
                     <div className="space-y-1.5">
                       <div className="h-2.5 w-[92%] rounded-full bg-muted" />
                       <div className="h-2.5 w-[78%] rounded-full bg-muted" />
                       <div className="h-2.5 w-[85%] rounded-full bg-muted" />
-                    </div>
-                    <div className="rounded-lg border border-border bg-muted/50 p-2.5">
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[0.5625rem] uppercase text-muted-foreground">
-                          tsx
-                        </span>
-                        <span className="text-[0.5625rem] text-muted-foreground">Copy</span>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="h-2 w-[60%] rounded-full bg-brand/30" />
-                        <div className="h-2 w-[80%] rounded-full bg-muted-foreground/20" />
-                        <div className="h-2 w-[45%] rounded-full bg-emerald-500/30" />
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -195,25 +166,23 @@ export default function LandingPage() {
                 <f.icon className="size-4" />
               </span>
               <h3 className="mt-3 text-sm font-semibold">{f.title}</h3>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{f.body}</p>
+              <p className="mt-1 text-2xs leading-5 text-muted-foreground">{f.body}</p>
             </div>
           ))}
         </section>
 
-        {/* Stack strip */}
-        <section className="mt-14 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-2xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Zap className="size-3 text-brand" /> Next.js 15 App Router
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Zap className="size-3 text-brand" /> TypeScript + Tailwind
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Zap className="size-3 text-brand" /> Base44 Auth + Realtime DB
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Moon className="size-3 text-brand" /> Dark mode
-          </span>
+        {/* Bottom CTA */}
+        <section className="mt-16 flex flex-col items-center gap-4 text-center">
+          <Zap className="size-5 text-brand" />
+          <h2 className="text-balance text-2xl font-semibold sm:text-3xl">
+            Ready when you are
+          </h2>
+          <Button variant="brand" size="lg" asChild>
+            <Link href="/chat">
+              Start chatting
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
         </section>
       </main>
     </div>

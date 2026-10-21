@@ -3,7 +3,6 @@
 import * as React from "react";
 import {
   Archive,
-  LogOut,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
@@ -16,7 +15,6 @@ import {
 } from "lucide-react";
 import { Wordmark } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,23 +34,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useChatStore } from "@/lib/store/chat-store";
-import { cn, initials, relativeTime, timeBucket } from "@/lib/utils";
+import { cn, relativeTime, timeBucket } from "@/lib/utils";
 import type { Conversation } from "@/lib/types";
 
 const BUCKET_ORDER = ["Pinned", "Today", "Yesterday", "Previous 7 days", "Older"] as const;
 
-export function Sidebar({
-  user,
-  onSignOut,
-}: {
-  user: { email?: string | null; name?: string | null; avatar?: string | null };
-  onSignOut: () => void;
-}) {
+export function Sidebar() {
   const {
     conversations,
     activeId,
     sidebarOpen,
     setSidebarOpen,
+    setSettingsOpen,
     loadConversation,
     deleteConversation,
     renameConversation,
@@ -246,30 +239,24 @@ export function Sidebar({
 
         <Separator className="bg-sidebar-border" />
 
-        {/* Footer */}
+        {/* Footer (guest mode: settings + theme, no account) */}
         <div className="flex items-center gap-2 px-3 py-3">
-          <Avatar className="size-7">
-            {user.avatar ? <AvatarImage src={user.avatar} alt="" /> : null}
-            <AvatarFallback>{initials(user.name ?? user.email)}</AvatarFallback>
-          </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium">{user.name ?? "You"}</p>
-            <p className="truncate text-2xs text-muted-foreground">{user.email}</p>
+            <p className="truncate text-xs font-medium">Guest mode</p>
+            <p className="truncate text-2xs text-muted-foreground">
+              Chats stay on this device
+            </p>
           </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <Settings className="size-4" />
+          </Button>
           <ThemeToggle />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Account menu">
-                <Settings className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top">
-              <DropdownMenuItem onClick={onSignOut}>
-                <LogOut />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </aside>
 

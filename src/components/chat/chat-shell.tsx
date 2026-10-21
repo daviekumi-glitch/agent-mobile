@@ -28,13 +28,8 @@ import {
 import { buildExport } from "@/lib/export";
 import { downloadText } from "@/lib/utils";
 import { useChatStore } from "@/lib/store/chat-store";
-import { signOut as base44SignOut } from "@/lib/base44/auth";
 
-export function ChatShell({
-  user,
-}: {
-  user: { id: string; email?: string | null; name?: string | null; avatar?: string | null };
-}) {
+export function ChatShell() {
   const {
     messages,
     isStreaming,
@@ -61,10 +56,6 @@ export function ChatShell({
     const stop = startRealtime();
     return stop;
   }, [loadConversations, startRealtime]);
-
-  const signOut = async () => {
-    base44SignOut("/login");
-  };
 
   const exportConversation = (format: "markdown" | "json") => {
     if (messages.length === 0) {
@@ -94,7 +85,7 @@ export function ChatShell({
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background">
-      <Sidebar user={user} onSignOut={signOut} />
+      <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
@@ -164,11 +155,11 @@ export function ChatShell({
 
         {/* Thread / empty state */}
         {messages.length === 0 ? (
-          <EmptyState userName={user.name} />
+          <EmptyState />
         ) : (
           <MessageThread
             messages={messages}
-            userName={user.name}
+            userName="You"
             isStreaming={isStreaming}
             onRegenerate={() => void regenerate()}
             onEdit={(id, text) => void editMessage(id, text)}

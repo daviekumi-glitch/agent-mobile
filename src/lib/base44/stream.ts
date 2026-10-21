@@ -1,31 +1,28 @@
 import { FUNCTIONS_ORIGIN } from "./client";
-import { getToken } from "./auth";
+import { getDeviceId } from "./device";
 import type { ChatRequestBody, ChatStreamEvent } from "@/lib/types";
 
 /**
  * Calls the `agentChat` Base44 backend function and yields its NDJSON events.
- * The function authenticates the user from the bearer token.
+ * Guest mode: the request is scoped by the device id header, not an account.
  */
 export async function* streamChat(
   body: ChatRequestBody,
   signal?: AbortSignal,
 ): AsyncGenerator<ChatStreamEvent> {
-  const token = getToken();
-  if (!token) throw new Error("You are signed out. Please sign in again.");
   if (!FUNCTIONS_ORIGIN) {
     throw new Error("NEXT_PUBLIC_BASE44_APP_URL is not configured.");
   }
 
   const res = await fetch(`${FUNCTIONS_ORIGIN}/functions/agentChat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json", "X-Device-Id": getDeviceId() },
     body: JSON.stringify(body),
     signal,
   });
 
   if (!res.ok || !res.body) {
     const detail = await res.json().catch(() => null);
-    if (res.status === 401) throw new Error("Your session expired. Please sign in again.");
     throw new Error(detail?.error ?? `Request failed (HTTP ${res.status})`);
   }
 

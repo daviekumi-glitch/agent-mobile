@@ -1,10 +1,10 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 // ---------------------------------------------------------------------------
-// agentTools: executes one assistant tool call for the signed-in user.
+// agentTools: executes one assistant tool call. Guest mode - authless.
 //
 // POST { tool, args, attachments } -> { ok, data, error? }
-// Called by `agentChat` (and usable directly). Requires authentication, never
+// Called same-origin by `agentChat` (and usable directly). Never
 // throws to the caller, and uses only keyless public APIs, so no secrets are
 // involved and nothing here consumes Base44 integration credits.
 // ---------------------------------------------------------------------------
@@ -406,9 +406,10 @@ async function runTool(name: string, args: Json, attachments: Attachment[]): Pro
 const TOOLS = ['web_search', 'get_weather', 'calculator', 'get_current_time', 'read_file'];
 
 Deno.serve(async (req) => {
+  // Guest mode: no accounts. Tools are stateless (tool name, args and
+  // attachment metadata only), so no caller identity is required. The function
+  // is reached same-origin from agentChat and holds no secrets in responses.
   const base44 = createClientFromRequest(req);
-  const user = await base44.auth.me().catch(() => null);
-  if (!user) return Response.json({ ok: false, data: null, error: 'Not authenticated' }, { status: 401 });
 
   let body: any;
   try { body = await req.json(); } catch { return Response.json({ ok: false, data: null, error: 'Invalid JSON body' }, { status: 400 }); }

@@ -1,28 +1,29 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 // ---------------------------------------------------------------------------
-// agentChat: authenticated, streaming chat endpoint with tool use.
+// agentChat: streaming chat endpoint with tool use. GUEST MODE - no accounts.
+//
+// Every browser generates a random device id on first visit and sends it as
+// the X-Device-Id header. Conversations are owned by that device id; all
+// entity reads/writes are checked against it server-side (service role).
 //
 // AI providers: NVIDIA NIM and OpenRouter, called directly with API keys held
-// ONLY as backend secrets (NVIDIA_API_KEY, OPENROUTER_API_KEY). The browser
-// never sees a key. An ordered fallback chain retries on 429 / 5xx / timeout /
-// empty output so a single flaky provider does not fail a chat turn.
+// ONLY as backend secrets. An ordered fallback chain retries on 429 / 5xx /
+// timeout / empty output so a single flaky provider does not fail a turn.
 //
 // Protocol: newline-delimited JSON events:
 //   conversation | message_start | delta | tool_call | tool_result |
 //   message_end | error | done
-// State is persisted to Base44 entities, so every open tab/device also gets
-// updates through entity realtime subscriptions.
 // ---------------------------------------------------------------------------
 
 type Provider = 'nvidia' | 'openrouter';
 interface ModelDef { id: string; provider: Provider; upstream: string; label: string }
 
 // Only models verified to answer with this key set. Order = fallback order.
-// Diversified 2026-10-21 after a provider-catalog shift: four OpenRouter free
-// models with separate per-model quotas lead, and NVIDIA-direct is the last
-// resort while its egress route intermittently hangs from this runtime. The
-// 6-hourly health-check automation re-verifies and re-points this chain.
+// Diversified 2026-10-21: four OpenRouter free models with separate per-model
+// quotas lead; NVIDIA-direct is the last resort while its egress route
+// intermittently hangs from this runtime. MiniMax leads: it answers in clean
+// conversational Markdown, while the nemotron family leaks native tool markup.
 const MODELS: ModelDef[] = [
   { id: 'minimax-flash', provider: 'openrouter', upstream: 'minimax/minimax-m3.1-flash:free', label: 'MiniMax M3.1 Flash' },
   { id: 'nemotron-svl', provider: 'openrouter', upstream: 'nvidia/nemotron-3.5-super-vl:free', label: 'Nemotron 3.5 Super VL' },
@@ -66,13 +67,23 @@ const TOOL_SPECS: Record<string, { description: string; args: string }> = {
   read_file: { description: 'Read the text of an attached file.', args: '{"name": string}' },
 };
 
-// ===== tools run in the sibling `agentTools` function ========================
+const DEVICE_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
-async function runTool(base44: any, name: string, args: Json, attachments: Attachment[]): Promise<ToolOutcome> {
+// ===== tools run in the sibling `agentTools` function ========================
+// Called same-origin so no user context is needed; agentTools is authless and
+// stateless (it only sees the tool name, args and attachment metadata).
+
+async function runTool(toolsUrl: string, name: string, args: Json, attachments: Attachment[]): Promise<ToolOutcome> {
   try {
-    const res = await base44.functions.invoke('agentTools', { tool: name, args, attachments });
-    const out = (res?.data ?? res) as ToolOutcome;
-    if (out && typeof out.ok === 'boolean') return out;
+    const res = await fetch(toolsUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: name, args, attachments }),
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!res.ok) return { ok: false, data: null, error: `Tool service HTTP ${res.status}` };
+    const out = await res.json();
+    if (out && typeof out.ok === 'boolean') return out as ToolOutcome;
     return { ok: false, data: null, error: 'Tool service returned an unexpected response.' };
   } catch (err) {
     return { ok: false, data: null, error: err instanceof Error ? err.message : 'Tool execution failed.' };
@@ -124,7 +135,7 @@ async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, str
 }
 
 /** Non-streaming completion with fallback. Returns content only (never reasoning). */
-async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500, timeoutMs = REQUEST_TIMEOUT_MS): Promise<{ text: string; model: ModelDef }> {
+async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500, timeoutMs?: number): Promise<{ text: string; model: ModelDef }> {
   const chain = fallbackChain(preferred);
   if (!chain.length) throw new Error('No AI provider is configured on the server.');
   const errors: string[] = [];
@@ -223,10 +234,14 @@ const deriveTitle = (text: string) => {
 
 Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
+  // Anonymous requests have no user; the service role bypasses entity access
+  // rules, so every query below is scoped by the verified device id.
+  const db = (base44 as any).asServiceRole ?? base44;
 
-  // --- Authentication -------------------------------------------------------
-  const user = await base44.auth.me().catch(() => null);
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 });
+  const device = (req.headers.get('x-device-id') ?? '').trim();
+  if (!DEVICE_RE.test(device)) return Response.json({ error: 'Missing or invalid device id.' }, { status: 400 });
+  // Same-origin URL of the sibling tools function (no user context needed).
+  const toolsUrl = new URL('/functions/agentTools', req.url).toString();
 
   let body: any;
   try { body = await req.json(); } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }); }
@@ -243,17 +258,17 @@ Deno.serve(async (req) => {
   const systemPrompt = String(body.systemPrompt ?? '').trim() || SYSTEM_PROMPT;
   const enabledTools: string[] = (Array.isArray(body.enabledTools) ? body.enabledTools : Object.keys(TOOL_SPECS)).filter((t: string) => t in TOOL_SPECS);
 
-  // --- Resolve conversation (RLS scopes lookups to the signed-in user) ------
+  // --- Resolve conversation (device-scoped) --------------------------------
   let conversationId: string | undefined = body.conversationId;
   let title = deriveTitle(userText);
   try {
     if (conversationId) {
-      const found = await base44.entities.Conversation.filter({ id: conversationId }).catch(() => []);
+      const found = await db.entities.Conversation.filter({ id: conversationId }).catch(() => []);
       const convo = found?.[0];
-      if (!convo) return Response.json({ error: 'Conversation not found' }, { status: 404 });
+      if (!convo || (convo.device_id ?? '') !== device) return Response.json({ error: 'Conversation not found' }, { status: 404 });
       title = convo.title;
     } else {
-      const created = await base44.entities.Conversation.create({ title, model, last_message_at: new Date().toISOString() });
+      const created = await db.entities.Conversation.create({ title, model, last_message_at: new Date().toISOString(), device_id: device });
       conversationId = created.id;
     }
   } catch (e) {
@@ -266,12 +281,12 @@ Deno.serve(async (req) => {
   let editFrom = -1;
   let removeTail: (idx: number) => Promise<void> = async () => {};
   try {
-    const all = (await base44.entities.Message.filter({ conversation_id: convId }, 'created_date', 500)) as any[];
+    const all = (await db.entities.Message.filter({ conversation_id: convId }, 'created_date', 500)) as any[];
     removeTail = async (idx: number) => {
       for (const m of all.slice(idx)) {
-        const calls = (await base44.entities.ToolCall.filter({ message_id: m.id }, 'created_date', 100).catch(() => [])) as any[];
-        await Promise.all(calls.map((c) => base44.entities.ToolCall.delete(c.id).catch(() => {})));
-        await base44.entities.Message.delete(m.id).catch(() => {});
+        const calls = (await db.entities.ToolCall.filter({ message_id: m.id }, 'created_date', 100).catch(() => [])) as any[];
+        await Promise.all(calls.map((c) => db.entities.ToolCall.delete(c.id).catch(() => {})));
+        await db.entities.Message.delete(m.id).catch(() => {});
       }
     };
     if (mode === 'regenerate') {
@@ -292,13 +307,13 @@ Deno.serve(async (req) => {
 
   if (mode === 'regenerate') attachments = regenAttachments.slice(0, 10);
   if (mode !== 'regenerate') {
-    const created = await base44.entities.Message.create({ conversation_id: convId, role: 'user', content: userText, attachments, status: 'complete' });
+    const created = await db.entities.Message.create({ conversation_id: convId, role: 'user', content: userText, attachments, status: 'complete' });
     // Edit: only now that the replacement exists is it safe to drop the old turn and everything after it.
     if (editFrom >= 0) { await removeTail(editFrom); void created; }
   }
-  const assistant = await base44.entities.Message.create({ conversation_id: convId, role: 'assistant', content: '', model, status: 'streaming' });
+  const assistant = await db.entities.Message.create({ conversation_id: convId, role: 'assistant', content: '', model, status: 'streaming' });
 
-  const rawHistory = ((await base44.entities.Message.filter({ conversation_id: convId }, 'created_date', HISTORY_LIMIT)) as any[])
+  const rawHistory = ((await db.entities.Message.filter({ conversation_id: convId }, 'created_date', HISTORY_LIMIT)) as any[])
     .filter((m) => m.id !== assistant.id && (m.role === 'user' || (m.role === 'assistant' && m.content)));
   // Variants of earlier turns collapse to the newest answer; variants of the
   // turn being regenerated are dropped so the model does not echo itself.
@@ -355,11 +370,11 @@ Only call a tool when it clearly helps (current facts, exact math, weather, time
               const args = (act.args && typeof act.args === 'object' ? act.args : {}) as Json;
               send({ type: 'tool_call', id: callId, name: act.tool, arguments: args });
               const started = Date.now();
-              const outcome = await runTool(base44, act.tool, args, attachments);
+              const outcome = await runTool(toolsUrl, act.tool, args, attachments);
               const durationMs = Date.now() - started;
               const status = outcome.ok ? 'success' : 'error';
               send({ type: 'tool_result', id: callId, name: act.tool, result: outcome.data, status, error: outcome.error, durationMs });
-              await base44.entities.ToolCall.create({
+              await db.entities.ToolCall.create({
                 message_id: assistant.id, conversation_id: convId, name: act.tool, arguments: args,
                 result: (outcome.data ?? {}) as Json, status, error: outcome.error ?? '', duration_ms: durationMs,
               }).catch(() => {});
@@ -379,19 +394,19 @@ Only call a tool when it clearly helps (current facts, exact math, weather, time
         finalText = finalText.trim();
         if (!finalText) throw new Error('The model returned an empty answer. Please try again.');
 
-        await base44.entities.Message.update(assistant.id, { content: finalText, status: 'complete' });
-        await base44.entities.Conversation.update(convId, { last_message_at: new Date().toISOString(), model });
+        await db.entities.Message.update(assistant.id, { content: finalText, status: 'complete' });
+        await db.entities.Conversation.update(convId, { last_message_at: new Date().toISOString(), model });
         send({ type: 'message_end', messageId: assistant.id, content: finalText });
         send({ type: 'done' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unexpected error';
         // A failed turn that produced nothing must not leave an empty answer behind
         // (it would show up as a blank variant). Keep partial text, drop empty rows.
-        if (finalText.trim()) await base44.entities.Message.update(assistant.id, { content: finalText, status: 'error' }).catch(() => {});
+        if (finalText.trim()) await db.entities.Message.update(assistant.id, { content: finalText, status: 'error' }).catch(() => {});
         else {
-          const calls = (await base44.entities.ToolCall.filter({ message_id: assistant.id }, 'created_date', 50).catch(() => [])) as any[];
-          await Promise.all(calls.map((c) => base44.entities.ToolCall.delete(c.id).catch(() => {})));
-          await base44.entities.Message.delete(assistant.id).catch(() => {});
+          const calls = (await db.entities.ToolCall.filter({ message_id: assistant.id }, 'created_date', 50).catch(() => [])) as any[];
+          await Promise.all(calls.map((c) => db.entities.ToolCall.delete(c.id).catch(() => {})));
+          await db.entities.Message.delete(assistant.id).catch(() => {});
         }
         send({ type: 'error', message });
         send({ type: 'done' });

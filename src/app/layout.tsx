@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/components/auth/auth-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -52,18 +51,16 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider delayDuration={200}>
-            <AuthProvider>
-              {children}
-              <Toaster
+            {children}
+            <Toaster
                 position="top-center"
                 toastOptions={{
                   classNames: {
                     toast:
                       "rounded-xl border border-border bg-card text-card-foreground shadow-lg",
                   },
-                }}
-              />
-            </AuthProvider>
+              }}
+            />
           </TooltipProvider>
         </ThemeProvider>
       </body>

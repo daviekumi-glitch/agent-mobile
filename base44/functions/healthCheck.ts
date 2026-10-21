@@ -2,7 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
 // ---------------------------------------------------------------------------
 // healthCheck: production health probe for the Agent Mobile backend.
-// Called ONLY by the scheduled workflow (every 6 hours) as the app admin.
+// Called ONLY by the scheduled workflow (every 6 hours).
 //
 // Probes, with tight timeouts so a dead endpoint cannot stall the workflow:
 //   1. The two AI providers in the fallback chain (tiny completion each)
@@ -72,9 +72,13 @@ async function releaseOk(): Promise<string> {
 
 Deno.serve(async (req) => {
   const base44 = await createClientFromRequest(req);
-  const user = await base44.auth.me().catch(() => null);
-  if (!user) return Response.json({ error: 'Not authenticated' }, { status: 401 });
-  if (user.role !== 'admin') return Response.json({ error: 'Admin only' }, { status: 403 });
+  // Guest mode: no user accounts exist. The probe is read-only, exposes no
+  // secrets (booleans and timings only) and is called by the scheduled
+  // workflow; a lightweight gate keeps trivial abuse away.
+  const key = (Deno.env.get('HEALTHCHECK_TOKEN') ?? '').trim();
+  if (key && (req.headers.get('x-healthcheck-token') ?? '') !== key) {
+    return Response.json({ error: 'Not authorized' }, { status: 403 });
+  }
 
   const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
   const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
