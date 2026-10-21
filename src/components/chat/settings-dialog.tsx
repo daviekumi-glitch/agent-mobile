@@ -19,10 +19,8 @@ import { cn } from "@/lib/utils";
 /**
  * Per-user preferences: the default model and a standing custom instruction.
  *
- * Both are persisted on `public.profiles` (see migration 0002) and read by the
- * chat route to seed each new turn. Saving writes through the user-scoped
- * Supabase client via `/api/profile`, so the `profiles_update_own` RLS policy
- * remains the enforcement point.
+ * Both are saved through the user-scoped Base44 backend and read by the chat
+ * layer to seed each new turn.
  */
 export function SettingsDialog({
   open,

@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Shared domain types for Agent Mobile.
-// These mirror the Postgres schema in supabase/migrations/0001_init.sql.
+// These mirror the Base44 entity schemas (Conversation, Message, ToolCall).
 // ---------------------------------------------------------------------------
 
 export type MessageRole = "system" | "user" | "assistant" | "tool";
@@ -35,7 +35,7 @@ export interface Attachment {
   name: string;
   mime: string;
   size: number;
-  /** Public URL when the file was uploaded to Supabase Storage. */
+  /** Public URL when the file was uploaded to Base44 Storage. */
   url?: string;
   /** Inline text content for small text files read client-side. */
   text?: string;

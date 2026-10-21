@@ -19,14 +19,18 @@ type Provider = 'nvidia' | 'openrouter';
 interface ModelDef { id: string; provider: Provider; upstream: string; label: string }
 
 // Only models verified to answer with this key set. Order = fallback order.
-// Re-verified 2026-10-21: nemotron-3-super and the OpenRouter nemotron mirrors
-// now 404 or stall, so the chain leads with the models that answered reliably.
+// 2026-10-21: nemotron-3-super and the OpenRouter nemotron mirrors now 404 or
+// stall, and NVIDIA NIM intermittently hangs from the Base44 runtime (egress
+// routing), so the OpenRouter gemmas lead. The 6-hourly health-check automation
+// re-verifies this chain and re-points it when providers change.
 const MODELS: ModelDef[] = [
-  { id: 'gpt-oss-20b', provider: 'nvidia', upstream: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B' },
+  { id: 'minimax-flash', provider: 'openrouter', upstream: 'minimax/minimax-m3.1-flash:free', label: 'MiniMax M3.1 Flash' },
+  { id: 'nemotron-svl', provider: 'openrouter', upstream: 'nvidia/nemotron-3.5-super-vl:free', label: 'Nemotron 3.5 Super VL' },
+  { id: 'nemotron-ultra', provider: 'openrouter', upstream: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'Nemotron 3 Ultra 550B' },
   { id: 'gemma-4-31b', provider: 'openrouter', upstream: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B' },
-  { id: 'gemma-4-26b', provider: 'openrouter', upstream: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 26B' },
+  { id: 'gpt-oss-20b', provider: 'nvidia', upstream: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B' },
 ];
-const DEFAULT_MODEL = 'gpt-oss-20b';
+const DEFAULT_MODEL = 'minimax-flash';
 
 const ENDPOINTS: Record<Provider, { url: string; key: () => string | undefined }> = {
   nvidia: { url: 'https://integrate.api.nvidia.com/v1/chat/completions', key: () => Deno.env.get('NVIDIA_API_KEY') },
@@ -35,13 +39,16 @@ const ENDPOINTS: Record<Provider, { url: string; key: () => string | undefined }
 
 const MAX_TOOL_ITERATIONS = 4;
 const HISTORY_LIMIT = 30;
-const REQUEST_TIMEOUT_MS = 45000;
-// Tool decisions are small (1200 tokens); fail over fast instead of hanging 45s.
+const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_STREAM_MS = 20000;
+const STREAM_IDLE_MS = 12000;
+// Tool decisions are small (1200 tokens); fail over fast instead of hanging 30s.
 const TOOL_TIMEOUT_MS = 25000;
 
 const SYSTEM_PROMPT = `You are Agent Mobile, a helpful, precise AI assistant.
 - Answer directly and lead with the result. Skip preamble.
 - Use GitHub-flavoured Markdown. Put code in fenced blocks with a language tag.
+- Write math in plain text (e.g. 1250 * 1.18 / 3 = 491.67). Never use LaTeX.
 - When a tool gives a better answer, call it instead of guessing. Never invent tool output, URLs or citations.
 - If a tool fails, say so plainly and continue with what you know.
 - Be concise by default.`;
@@ -82,11 +89,12 @@ function fallbackChain(preferred: string): ModelDef[] {
   return [first, ...rest].filter((m) => !!ENDPOINTS[m.provider].key());
 }
 
-async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, stream: boolean, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, stream: boolean, timeoutMs?: number): Promise<Response> {
   const key = ENDPOINTS[m.provider].key();
   if (!key) throw new RetryableError(`${m.provider} key not configured`);
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  const cap = stream ? REQUEST_TIMEOUT_STREAM_MS : (timeoutMs ?? REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), cap);
   try {
     const res = await fetch(ENDPOINTS[m.provider].url, {
       method: 'POST',
@@ -98,6 +106,7 @@ async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, str
       },
       body: JSON.stringify({ model: m.upstream, messages, max_tokens: maxTokens, temperature: 0.3, stream }),
     });
+    (res as any)._ctl = ctl;
     if (!res.ok) {
       const body = (await res.text().catch(() => '')).slice(0, 200);
       if (res.status === 429 || res.status >= 500 || res.status === 404 || res.status === 410 || res.status === 408) {
@@ -155,6 +164,10 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
       const reader = res.body!.getReader();
       const dec = new TextDecoder();
       let buf = '';
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      const bump = () => { clearTimeout(watchdog); watchdog = setTimeout(() => (res as any)._ctl?.abort(), STREAM_IDLE_MS); };
+      bump();
+      try {
       yield { model: m };
       while (true) {
         const { done, value } = await reader.read();
@@ -165,6 +178,7 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
         for (const raw of lines) {
           const line = raw.trim();
           if (!line.startsWith('data:')) continue;
+          bump();
           const payload = line.slice(5).trim();
           if (payload === '[DONE]') continue;
           try {
@@ -173,6 +187,7 @@ async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens
           } catch { /* ignore keep-alives / partial frames */ }
         }
       }
+      } finally { clearTimeout(watchdog); }
       if (produced) return;
       errors.push(`${m.label}: empty stream`);
     } catch (e) {
@@ -357,7 +372,7 @@ Only call a tool when it clearly helps (current facts, exact math, weather, time
 
         // Phase 2: stream the final answer token-by-token.
         const answerSystem = systemPrompt + (scratch.length
-          ? `\n\nUse these tool results to answer. Do not mention the JSON protocol.\n${scratch.join('\n')}` : '');
+          ? `\n\nUse these tool results to write the final answer. Reply as normal conversational Markdown for the user: state the result and briefly explain it. Never output XML, tool-call markup, or raw JSON - you are NOT calling a tool in this step.\n${scratch.join('\n')}` : '');
         for await (const part of streamComplete(model, [{ role: 'system', content: answerSystem }, ...chatHistory])) {
           if (part.delta) { finalText += part.delta; send({ type: 'delta', text: part.delta }); }
         }

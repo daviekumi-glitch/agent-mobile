@@ -24,10 +24,26 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
-    id: "gpt-oss-20b",
-    label: "GPT-OSS 20B",
-    description: "Fast, reliable default. Handles tools well.",
-    provider: "NVIDIA",
+    id: "minimax-flash",
+    label: "MiniMax M3.1 Flash",
+    description: "Quick, clean general-purpose model. The default.",
+    provider: "OpenRouter",
+    context: "200K",
+    tools: true,
+  },
+  {
+    id: "nemotron-svl",
+    label: "Nemotron 3.5 Super VL",
+    description: "NVIDIA's 120B model, strong reasoning.",
+    provider: "OpenRouter",
+    context: "128K",
+    tools: true,
+  },
+  {
+    id: "nemotron-ultra",
+    label: "Nemotron 3 Ultra 550B",
+    description: "NVIDIA's flagship MoE for hard questions.",
+    provider: "OpenRouter",
     context: "128K",
     tools: true,
   },
@@ -40,11 +56,11 @@ export const MODELS: ModelOption[] = [
     tools: true,
   },
   {
-    id: "gemma-4-26b",
-    label: "Gemma 4 26B",
-    description: "Lighter Gemma variant, quick responses.",
-    provider: "OpenRouter",
-    context: "262K",
+    id: "gpt-oss-20b",
+    label: "GPT-OSS 20B",
+    description: "Fast open-weight model served by NVIDIA.",
+    provider: "NVIDIA",
+    context: "128K",
     tools: true,
   },
 ];
@@ -53,7 +69,7 @@ export const MODELS: ModelOption[] = [
  * The model a conversation falls back to. Exported so the client store seeds
  * its initial state from the same source of truth as the picker.
  */
-export const DEFAULT_MODEL = "gpt-oss-20b";
+export const DEFAULT_MODEL = "minimax-flash";
 
 /** True when `id` names a model in the catalog. Narrows the type for callers. */
 export function isKnownModel(id: string | null | undefined): id is string {

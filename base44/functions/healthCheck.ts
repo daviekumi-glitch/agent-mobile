@@ -80,12 +80,16 @@ Deno.serve(async (req) => {
   const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
 
   const pairs = await Promise.all([
-    probe('gpt-oss-20b (NVIDIA)', () =>
-      nvidiaKey ? tinyCompletion('https://integrate.api.nvidia.com/v1/chat/completions', nvidiaKey, 'openai/gpt-oss-20b') : Promise.reject(new Error('NVIDIA_API_KEY missing'))),
+    probe('nemotron-3.5-super-vl (OpenRouter)', () =>
+      openrouterKey ? tinyCompletion('https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'nvidia/nemotron-3.5-super-vl:free') : Promise.reject(new Error('OPENROUTER_API_KEY missing'))),
+    probe('minimax-m3.1-flash (OpenRouter)', () =>
+      openrouterKey ? tinyCompletion('https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'minimax/minimax-m3.1-flash:free') : Promise.reject(new Error('OPENROUTER_API_KEY missing'))),
+    probe('nemotron-3-ultra (OpenRouter)', () =>
+      openrouterKey ? tinyCompletion('https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'nvidia/nemotron-3-ultra-550b-a55b:free') : Promise.reject(new Error('OPENROUTER_API_KEY missing'))),
     probe('gemma-4-31b (OpenRouter)', () =>
       openrouterKey ? tinyCompletion('https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'google/gemma-4-31b-it:free') : Promise.reject(new Error('OPENROUTER_API_KEY missing'))),
-    probe('gemma-4-26b (OpenRouter)', () =>
-      openrouterKey ? tinyCompletion('https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'google/gemma-4-26b-a4b-it:free') : Promise.reject(new Error('OPENROUTER_API_KEY missing'))),
+    probe('gpt-oss-20b (NVIDIA)', () =>
+      nvidiaKey ? tinyCompletion('https://integrate.api.nvidia.com/v1/chat/completions', nvidiaKey, 'openai/gpt-oss-20b') : Promise.reject(new Error('NVIDIA_API_KEY missing'))),
     probe('weather source (wttr.in)', () => headOk('https://wttr.in/Blantyre?format=j1')),
     probe('search source (Wikipedia)', () => headOk('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=malawi&format=json&origin=*')),
     probe('search source (DuckDuckGo)', () => headOk('https://api.duckduckgo.com/?q=malawi&format=json&no_html=1')),
@@ -96,9 +100,12 @@ Deno.serve(async (req) => {
   const sources = Object.fromEntries(pairs.filter(([k]) => k.startsWith('weather') || k.startsWith('search')));
   const release = Object.fromEntries(pairs.filter(([k]) => k.startsWith('GitHub')));
 
-  // Healthy = every AI provider in the chain answered AND at least the search
-  // sources work (the chat itself keeps working even without weather/search).
-  const aiOk = Object.values(providers).every((p: any) => p.ok);
+  // Healthy = at least one chat model on OpenRouter answered. NVIDIA-direct is
+  // informational (it intermittently hangs from this runtime); the search and
+  // weather tools degrade gracefully, so they do not fail the check.
+  const orOk = ['nemotron-3.5-super-vl (OpenRouter)', 'minimax-m3.1-flash (OpenRouter)', 'nemotron-3-ultra (OpenRouter)', 'gemma-4-31b (OpenRouter)']
+    .some((k) => (providers as any)[k]?.ok === true);
+  const aiOk = orOk;
   // At least one search source must work; weather has its own fallback.
   const searchOk = (sources['search source (Wikipedia)'] as any)?.ok === true ||
     (sources['search source (DuckDuckGo)'] as any)?.ok === true;
