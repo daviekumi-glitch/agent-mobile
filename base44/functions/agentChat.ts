@@ -73,6 +73,26 @@ const TOOL_SPECS: Record<string, { description: string; args: string }> = {
 };
 
 const DEVICE_RE = /^[A-Za-z0-9_-]{8,64}$/;
+// Custom model ids chosen from the live agentModels catalog:
+// "openrouter:<upstream>" or "nvidia:<upstream>".
+const CUSTOM_MODEL_RE = /^(openrouter|nvidia):([A-Za-z0-9._/@-]{2,140})$/;
+
+// Simple per-device sliding-window rate limit: 20 chats per minute. Guest
+// mode is open by design; this only stops scripted abuse from one device.
+const RATE_LIMIT_PER_MIN = 20;
+const rateHits = new Map<string, number[]>();
+function isRateLimited(device: string): boolean {
+  const now = Date.now();
+  const arr = (rateHits.get(device) ?? []).filter((t) => now - t < 60_000);
+  if (arr.length >= RATE_LIMIT_PER_MIN) { rateHits.set(device, arr); return true; }
+  arr.push(now);
+  rateHits.set(device, arr);
+  // Opportunistic GC of idle entries.
+  if (rateHits.size > 4096) {
+    for (const [k, v] of rateHits) if (!v.length || now - v[v.length - 1] > 600_000) rateHits.delete(k);
+  }
+  return false;
+}
 
 // ===== tools run in the sibling `agentTools` function ========================
 // Called same-origin so no user context is needed; agentTools is authless and
@@ -98,11 +118,13 @@ async function runTool(toolsUrl: string, name: string, args: Json, attachments: 
 // ===== LLM provider layer ====================================================
 class RetryableError extends Error {}
 
-function fallbackChain(preferred: string): ModelDef[] {
+function fallbackChain(preferred: string, custom?: ModelDef | null): ModelDef[] {
   const first = MODELS.find((m) => m.id === preferred) ?? MODELS.find((m) => m.id === DEFAULT_MODEL)!;
   const rest = MODELS.filter((m) => m.id !== first.id);
-  // Only attempt providers whose key is configured.
-  return [first, ...rest].filter((m) => !!ENDPOINTS[m.provider].key());
+  // Only attempt providers whose key is configured. A verified custom model
+  // (from the live catalog) is tried first, then the curated chain backs it up.
+  const chain = custom && ENDPOINTS[custom.provider].key() ? [custom, first, ...rest] : [first, ...rest];
+  return chain.filter((m) => !!ENDPOINTS[m.provider].key());
 }
 
 async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, stream: boolean, timeoutMs?: number): Promise<Response> {
@@ -140,8 +162,8 @@ async function callOnce(m: ModelDef, messages: ChatMsg[], maxTokens: number, str
 }
 
 /** Non-streaming completion with fallback. Returns content only (never reasoning). */
-async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500, timeoutMs?: number): Promise<{ text: string; model: ModelDef }> {
-  const chain = fallbackChain(preferred);
+async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500, timeoutMs?: number, custom?: ModelDef | null): Promise<{ text: string; model: ModelDef }> {
+  const chain = fallbackChain(preferred, custom);
   if (!chain.length) throw new Error('No AI provider is configured on the server.');
   const errors: string[] = [];
   // Three passes with growing backoff: free-tier 429s and momentary hangs
@@ -165,8 +187,8 @@ async function complete(preferred: string, messages: ChatMsg[], maxTokens = 2500
 }
 
 /** Streaming completion with fallback. Yields content deltas as they arrive. */
-async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens = 3000): AsyncGenerator<{ delta?: string; model?: ModelDef }> {
-  const chain = fallbackChain(preferred);
+async function* streamComplete(preferred: string, messages: ChatMsg[], maxTokens = 3000, custom?: ModelDef | null): AsyncGenerator<{ delta?: string; model?: ModelDef }> {
+  const chain = fallbackChain(preferred, custom);
   if (!chain.length) throw new Error('No AI provider is configured on the server.');
   const errors: string[] = [];
   // Three passes; a later pass only happens if nothing was streamed yet,
@@ -259,7 +281,18 @@ Deno.serve(async (req) => {
   if (mode !== 'send' && !body.conversationId) return Response.json({ error: '`conversationId` is required for this mode' }, { status: 400 });
   if (mode === 'edit' && !body.targetMessageId) return Response.json({ error: '`targetMessageId` is required for edit' }, { status: 400 });
 
-  const model = MODELS.some((m) => m.id === body.model) ? String(body.model) : DEFAULT_MODEL;
+  if (isRateLimited(device)) return Response.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+  const bodyModel = typeof body.model === 'string' ? body.model.trim() : '';
+  let model = MODELS.some((m) => m.id === bodyModel) ? bodyModel : DEFAULT_MODEL;
+  let customModel: ModelDef | null = null;
+  const customMatch = CUSTOM_MODEL_RE.exec(bodyModel);
+  if (customMatch) {
+    const provider = customMatch[1] as Provider;
+    if (ENDPOINTS[provider].key()) {
+      customModel = { id: bodyModel, provider, upstream: customMatch[2], label: customMatch[2] };
+      model = bodyModel;
+    }
+  }
   let attachments: Attachment[] = Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : [];
   const systemPrompt = String(body.systemPrompt ?? '').trim() || SYSTEM_PROMPT;
   const enabledTools: string[] = (Array.isArray(body.enabledTools) ? body.enabledTools : Object.keys(TOOL_SPECS)).filter((t: string) => t in TOOL_SPECS);
@@ -317,7 +350,7 @@ Deno.serve(async (req) => {
     // Edit: only now that the replacement exists is it safe to drop the old turn and everything after it.
     if (editFrom >= 0) { await removeTail(editFrom); void created; }
   }
-  const assistant = await db.entities.Message.create({ conversation_id: convId, role: 'assistant', content: '', model, status: 'streaming' });
+  const assistant = await db.entities.Message.create({ conversation_id: convId, role: 'assistant', content: '', model: customModel ? customModel.upstream.split('/').slice(-1)[0].slice(0, 40) : model, status: 'streaming' });
 
   const rawHistory = ((await db.entities.Message.filter({ conversation_id: convId }, 'created_date', HISTORY_LIMIT)) as any[])
     .filter((m) => m.id !== assistant.id && (m.role === 'user' || (m.role === 'assistant' && m.content)));
@@ -366,7 +399,7 @@ Decide the next step. Respond with ONLY a JSON object, no prose, no code fences:
 - If no tool is needed (or you have enough information): {"action":"final"}
 Only call a tool when it clearly helps (current facts, exact math, weather, time, attached files).` +
               (scratch.length ? `\n\nTool results so far:\n${scratch.join('\n')}` : '');
-            const { text } = await complete(model, [{ role: 'system', content: instruction }, ...chatHistory], 1200, TOOL_TIMEOUT_MS);
+            const { text } = await complete(model, [{ role: 'system', content: instruction }, ...chatHistory], 1200, TOOL_TIMEOUT_MS, customModel);
             const act = parseAction(text);
             if (act?.action === 'tool' && act.tool && enabledTools.includes(act.tool)) {
               const signature = `${act.tool}:${JSON.stringify(act.args ?? {})}`;
@@ -394,7 +427,7 @@ Only call a tool when it clearly helps (current facts, exact math, weather, time
         // Phase 2: stream the final answer token-by-token.
         const answerSystem = systemPrompt + (scratch.length
           ? `\n\nUse these tool results to write the final answer. Reply as normal conversational Markdown for the user: state the result and briefly explain it. Never output XML, tool-call markup, or raw JSON - you are NOT calling a tool in this step.\n${scratch.join('\n')}` : '');
-        for await (const part of streamComplete(model, [{ role: 'system', content: answerSystem }, ...chatHistory])) {
+        for await (const part of streamComplete(model, [{ role: 'system', content: answerSystem }, ...chatHistory], 3000, customModel)) {
           if (part.delta) { finalText += part.delta; send({ type: 'delta', text: part.delta }); }
         }
         finalText = finalText.trim();

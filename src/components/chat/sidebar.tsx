@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Archive,
   MessageSquarePlus,
@@ -40,12 +42,12 @@ import type { Conversation } from "@/lib/types";
 const BUCKET_ORDER = ["Pinned", "Today", "Yesterday", "Previous 7 days", "Older"] as const;
 
 export function Sidebar() {
+  const router = useRouter();
   const {
     conversations,
     activeId,
     sidebarOpen,
     setSidebarOpen,
-    setSettingsOpen,
     loadConversation,
     deleteConversation,
     renameConversation,
@@ -239,6 +241,24 @@ export function Sidebar() {
 
         <Separator className="bg-sidebar-border" />
 
+        {/* Explore links to the content pages */}
+        <div className="grid grid-cols-2 gap-1 px-3 pt-3">
+          {[
+            { href: "/tools", label: "Tools" },
+            { href: "/skills", label: "Skills" },
+            { href: "/about", label: "About" },
+            { href: "/settings", label: "Settings" },
+          ].map((n) => (
+            <Link
+              key={n.href}
+              href={n.href}
+              className="press rounded-xl px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            >
+              {n.label}
+            </Link>
+          ))}
+        </div>
+
         {/* Footer (guest mode: settings + theme, no account) */}
         <div className="flex items-center gap-2 px-3 py-3">
           <div className="min-w-0 flex-1">
@@ -250,7 +270,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => router.push("/settings")}
             aria-label="Settings"
             title="Settings"
           >

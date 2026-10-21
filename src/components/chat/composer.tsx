@@ -34,6 +34,17 @@ const ACCEPT = [
 export function Composer() {
   const { sendMessage, isStreaming, stop, model, setModel, error, setError } = useChatStore();
   const [value, setValue] = React.useState("");
+  const prefill = useChatStore((s) => s.prefill);
+
+  // A prompt prefilled by an external page (?q= deep link). The shell sets it
+  // after this component may already have mounted, so react to the store
+  // value instead of reading once on mount.
+  React.useEffect(() => {
+    if (!prefill) return;
+    useChatStore.getState().consumePrefill();
+    setValue(prefill);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [prefill]);
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
   const [uploading, setUploading] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);

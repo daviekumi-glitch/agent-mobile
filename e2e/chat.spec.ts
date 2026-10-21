@@ -29,9 +29,13 @@ test.describe("app shell", () => {
 
   test("a fresh visitor gets a persistent device id", async ({ page }) => {
     await page.goto("/chat/");
+    // The id is created on the first backend call after hydration; wait for
+    // it instead of reading instantly, so slow machines cannot flake this.
+    await page.waitForFunction(() => localStorage.getItem("am_device_id") !== null, null, { timeout: 15_000 });
     const id1 = await page.evaluate(() => localStorage.getItem("am_device_id"));
     expect(id1).toBeTruthy();
     await page.reload();
+    await page.waitForFunction(() => localStorage.getItem("am_device_id") !== null, null, { timeout: 15_000 });
     const id2 = await page.evaluate(() => localStorage.getItem("am_device_id"));
     expect(id2).toBe(id1);
   });

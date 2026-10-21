@@ -60,6 +60,10 @@ interface ChatState {
   enableTools: (names: string[]) => void;
   setVariant: (groupId: string, index: number) => void;
   setError: (e: string | null) => void;
+  /** Prompt prefilled by an external page (?q= deep link). */
+  prefill: string | null;
+  setPrefill: (prefill: string | null) => void;
+  consumePrefill: () => string | null;
   /** Keep the app fresh: refetch data when the tab regains focus. Returns a cleanup function. */
   startRealtime: () => () => void;
   stop: () => void;
@@ -159,6 +163,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setVariant: (groupId, index) =>
     set((s) => ({ selectedVariants: { ...s.selectedVariants, [groupId]: index } })),
   setError: (error) => set({ error }),
+  /** Prompt prefilled from an external page (e.g. /tools?… Try it links). */
+  prefill: null as string | null,
+  setPrefill: (prefill) => set({ prefill }),
+  consumePrefill: () => {
+    const v = get().prefill;
+    if (v) set({ prefill: null });
+    return v;
+  },
 
   stop: () => {
     get().abortController?.abort();

@@ -134,3 +134,18 @@ There are no accounts. On first visit the browser generates a random device id (
 ### Realtime sync
 
 The Base44 realtime websocket rejects connections from this app, so thread updates across tabs/devices use **refetch-on-focus**: when a conversation is open and the window regains focus or becomes visible, the client refetches that conversation and merges any new messages.
+## Live model catalog
+
+`base44/functions/agentModels.ts` aggregates the full model catalogs of both
+providers (OpenRouter + NVIDIA NIM, ~480 models) with a one-hour server-side
+cache. The in-chat model picker searches this catalog; any model can be picked
+as first choice and `agentChat` routes it by the `openrouter:` / `nvidia:`
+id prefix, with the curated fallback chain still backing it up.
+
+## Content pages
+
+`/settings` (default model, custom instructions, theme, device & privacy),
+`/about`, `/tools` and `/skills` each ship in the static bundle. Tool and skill
+cards deep-link into the chat with a prefilled prompt via `?q=`.
+
+## Deployment

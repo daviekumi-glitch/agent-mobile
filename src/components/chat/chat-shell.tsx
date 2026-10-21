@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import {
+import { useRouter } from "next/navigation";
+import { Settings,
   Download,
   FileJson,
   FileText,
@@ -35,7 +36,6 @@ export function ChatShell() {
     isStreaming,
     loadConversations,
     startRealtime,
-    realtimeLive,
     setSidebarOpen,
     setToolsPanelOpen,
     toolsPanelOpen,
@@ -45,7 +45,20 @@ export function ChatShell() {
     deleteMessage,
     conversations,
     activeId,
+    setPrefill,
   } = useChatStore();
+  const router = useRouter();
+
+  // Pages like /tools and /skills deep-link into the composer with ?q=
+  // (read imperatively: useSearchParams() would force a Suspense boundary)
+  React.useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) {
+      setPrefill(q.slice(0, 2000));
+      // Clean the URL without reloading.
+      window.history.replaceState(null, "", "/chat");
+    }
+  }, [setPrefill]);
 
   const activeConversation = conversations.find((c) => c.id === activeId) ?? null;
   const activeTitle = activeConversation?.title ?? "New chat";
@@ -150,6 +163,16 @@ export function ChatShell() {
             title="Skills & tools"
           >
             <PanelRight className="size-4" />
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => router.push("/settings")}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <Settings className="size-4" />
           </Button>
         </header>
 
