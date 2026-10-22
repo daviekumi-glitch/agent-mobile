@@ -56,7 +56,7 @@ export function ChatShell() {
     if (q) {
       setPrefill(q.slice(0, 2000));
       // Clean the URL without reloading.
-      window.history.replaceState(null, "", "/chat");
+      window.history.replaceState(null, "", `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat`);
     }
   }, [setPrefill]);
 

@@ -96,64 +96,31 @@ export default function LandingPage() {
           </p>
         </section>
 
-        {/* App preview */}
-        <section className="mt-16">
-          <div className="elev-3 overflow-hidden rounded-[28px] border border-border/70 bg-card/80 shadow-2xl backdrop-blur">
-            <div className="flex items-center gap-1.5 border-b border-border px-4 py-3">
-              <span className="size-2.5 rounded-full bg-red-400/70" />
-              <span className="size-2.5 rounded-full bg-amber-400/70" />
-              <span className="size-2.5 rounded-full bg-emerald-400/70" />
-              <span className="ml-3 text-2xs text-muted-foreground">agent-mobile.app/chat</span>
-            </div>
-
-            <div className="grid gap-0 sm:grid-cols-[200px_1fr]">
-              {/* Fake sidebar */}
-              <div className="hidden flex-col gap-1.5 border-r border-border bg-sidebar p-3 sm:flex">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="text-2xs font-semibold">Agent Mobile</span>
-                </div>
-                {["Today", "Yesterday"].map((bucket) => (
-                  <div key={bucket} className="mt-2">
-                    <p className="px-1 text-[0.625rem] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {bucket}
-                    </p>
-                    <div className="mt-1 space-y-1">
-                      <div className="h-6 rounded-md bg-sidebar-accent" />
-                      <div className="h-6 rounded-md bg-sidebar-accent/60" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Fake thread */}
-              <div className="space-y-4 p-5">
-                <div className="flex justify-end">
-                  <div className="brand-gradient max-w-[70%] rounded-[18px] rounded-br-md px-3.5 py-2 text-xs text-white shadow-lg shadow-brand/25">
-                    What&apos;s the weather in Blantyre right now?
-                  </div>
-                </div>
-
-                <div className="flex gap-2.5">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-[0.625rem]">
-                      <CloudSun className="size-3 text-brand" />
-                      <span className="font-medium">Weather</span>
-                      <span className="text-muted-foreground">Blantyre, Malawi</span>
-                      <Badge variant="success" className="ml-1">
-                        380ms
-                      </Badge>
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="h-2.5 w-[92%] rounded-full bg-muted" />
-                      <div className="h-2.5 w-[78%] rounded-full bg-muted" />
-                      <div className="h-2.5 w-[85%] rounded-full bg-muted" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* App preview: real product screenshots, not a mockup */}
+        <div className="mt-8 flex flex-col items-center gap-6 md:flex-row md:items-start md:justify-center">
+          <figure className="animate-md-rise stagger-3 w-full max-w-xl overflow-hidden elev-3 rounded-3xl border border-border/70 bg-card/80 p-2 shadow-2xl">
+            <img
+              src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/screenshots/08-chat-desktop.png`}
+              alt="Agent Mobile chat on desktop: a tool-using answer with live weather data"
+              className="w-full rounded-2xl"
+              loading="lazy"
+            />
+            <figcaption className="px-2 pt-2 pb-1 text-center text-2xs text-muted-foreground">
+              Real conversation with the weather tool - not a mockup
+            </figcaption>
+          </figure>
+          <figure className="animate-md-rise stagger-4 w-40 shrink-0 overflow-hidden elev-2 rounded-3xl border border-border/70 bg-card/80 p-1.5 md:mt-8 shadow-xl">
+            <img
+              src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/screenshots/responsive-mobile.png`}
+              alt="Agent Mobile chat on a phone"
+              className="w-full rounded-2xl"
+              loading="lazy"
+            />
+            <figcaption className="px-1.5 pt-1.5 pb-0.5 text-center text-[0.5rem] text-muted-foreground">
+              390px phone layout
+            </figcaption>
+          </figure>
+        </div>
 
         {/* Features */}
         <section className="mt-16 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

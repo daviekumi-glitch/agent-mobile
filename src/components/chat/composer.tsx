@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { uploadAttachment } from "@/lib/base44/data";
-import { ArrowUp, Loader2, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Loader2, Paperclip, RotateCcw, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/chat/model-picker";
 import { useChatStore } from "@/lib/store/chat-store";
@@ -159,6 +159,17 @@ export function Composer() {
         {error && (
           <div className="mb-2 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/8 px-3 py-2">
             <p className="flex-1 text-xs text-destructive">{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                void useChatStore.getState().regenerate();
+              }}
+              className="flex items-center gap-1 rounded-lg bg-destructive/10 px-2 py-1 text-2xs font-medium text-destructive transition-all active:scale-95 hover:bg-destructive/15"
+            >
+              <RotateCcw className="size-3" />
+              Retry
+            </button>
             <button
               type="button"
               onClick={() => setError(null)}

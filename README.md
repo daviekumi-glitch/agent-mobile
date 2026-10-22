@@ -148,4 +148,13 @@ id prefix, with the curated fallback chain still backing it up.
 `/about`, `/tools` and `/skills` each ship in the static bundle. Tool and skill
 cards deep-link into the chat with a prefilled prompt via `?q=`.
 
+## Live web app
+
+The latest static build is published on GitHub Pages:
+https://daviekumi-glitch.github.io/agent-mobile/
+
+Re-publish after changes with:
+`NEXT_PUBLIC_BASE_PATH=/agent-mobile npm run build` then copy `out/` plus
+`public/screenshots/` and an empty `.nojekyll` to the `gh-pages` branch.
+
 ## Deployment
